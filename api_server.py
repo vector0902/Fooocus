@@ -78,6 +78,22 @@ start_time = time.time()  # Fooocus/API instance start time
 current_task: Optional[str] = None
 task_lock = asyncio.Lock()
 
+UPTIME_FILE = "/tmp/uptime.fcs"
+
+def init_uptime_file():
+    """Initialize uptime tracking file - preserves initial start time across restarts"""
+    if not os.path.exists(UPTIME_FILE):
+        Path(UPTIME_FILE).touch()
+
+init_uptime_file()
+
+def get_initial_start_time() -> float:
+    """Get the initial start time from the uptime file"""
+    try:
+        return os.path.getmtime(UPTIME_FILE)
+    except:
+        return time.time()
+
 # Optional: Set max session duration (in seconds) for temporary instances
 # Set to 0 or None to disable countdown
 MAX_SESSION_DURATION = 600  # 10 minutes (adjust based on your Cloud Studio limit)
@@ -139,7 +155,7 @@ async def get_status():
     return StatusResponse(
         status="running" if current_task else "idle",
         version=get_fooocus_version(),
-        uptime=time.time() - start_time,
+        uptime=time.time() - get_initial_start_time(),
         current_task=current_task
     )
 
@@ -157,8 +173,11 @@ async def get_system_uptime():
     """
     global start_time
     
+    initial_start = get_initial_start_time()
+    
     # Calculate Fooocus instance uptime (the main metric you need)
-    instance_uptime_seconds = time.time() - start_time
+    # Uses persisted file timestamp to survive restarts
+    instance_uptime_seconds = time.time() - initial_start
     
     # Convert to human-readable format
     days = int(instance_uptime_seconds // 86400)
@@ -194,7 +213,7 @@ async def get_system_uptime():
         "instance": {
             "uptime_seconds": round(instance_uptime_seconds, 1),
             "uptime_human": instance_uptime_human,
-            "start_time": datetime.fromtimestamp(start_time).isoformat(),
+            "start_time": datetime.fromtimestamp(initial_start).isoformat(),
             "pid": os.getpid()
         }
     }
