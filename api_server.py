@@ -9,6 +9,8 @@ import json
 import time
 import base64
 import asyncio
+import socket
+import platform
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -136,6 +138,141 @@ async def get_status():
         uptime=time.time() - start_time,
         current_task=current_task
     )
+
+
+@app.get("/api/uptime")
+async def get_system_uptime():
+    """
+    Get system uptime and resource usage.
+    
+    Returns comprehensive system information including:
+    - System uptime (human-readable format)
+    - CPU usage and load averages
+    - Memory usage (total, used, available)
+    - Disk usage
+    - Process information
+    
+    Uses psutil if available, otherwise falls back to subprocess.
+    """
+    try:
+        import psutil
+        
+        # System boot time
+        boot_time = psutil.boot_time()
+        uptime_seconds = time.time() - boot_time
+        
+        # Convert to human-readable format
+        days = int(uptime_seconds // 86400)
+        hours = int((uptime_seconds % 86400) // 3600)
+        minutes = int((uptime_seconds % 3600) // 60)
+        
+        uptime_str = f"{days}d {hours}h {minutes}m"
+        
+        # CPU information
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count_logical = psutil.cpu_count(logical=True)
+        cpu_count_physical = psutil.cpu_count(logical=False)
+        load_avg_1m, load_avg_5m, load_avg_15m = os.getloadavg() if hasattr(os, 'getloadavg') else (0, 0, 0)
+        
+        # Memory information
+        mem = psutil.virtual_memory()
+        memory_info = {
+            "total_gb": round(mem.total / (1024**3), 2),
+            "used_gb": round(mem.used / (1024**3), 2),
+            "available_gb": round(mem.available / (1024**3), 2),
+            "percent": mem.percent
+        }
+        
+        # Swap information
+        swap = psutil.swap_memory()
+        swap_info = {
+            "total_gb": round(swap.total / (1024**3), 2),
+            "used_gb": round(swap.used / (1024**3), 2),
+            "percent": swap.percent
+        }
+        
+        # Disk information (current partition)
+        disk = psutil.disk_usage('/')
+        disk_info = {
+            "total_gb": round(disk.total / (1024**3), 2),
+            "used_gb": round(disk.used / (1024**3), 2),
+            "free_gb": round(disk.free / (1024**3), 2),
+            "percent": disk.percent
+        }
+        
+        # GPU information (if available)
+        gpu_info = None
+        try:
+            import GPUtil
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu = gpus[0]
+                gpu_info = {
+                    "name": gpu.name,
+                    "memory_total_mb": int(gpu.memoryTotal),
+                    "memory_used_mb": int(gpu.memoryUsed),
+                    "memory_free_mb": int(gpu.memoryFree),
+                    "load": f"{gpu.load*100:.1f}%",
+                    "temperature": f"{gpu.temperature}°C" if gpu.temperature else "N/A"
+                }
+        except ImportError:
+            pass
+        except Exception:
+            pass
+        
+        # Current process info
+        process = psutil.Process(os.getpid())
+        process_info = {
+            "pid": process.pid,
+            "memory_mb": round(process.memory_info().rss / (1024**2), 2),
+            "cpu_percent": process.cpu_percent(),
+            "num_threads": process.num_threads(),
+            "create_time": datetime.fromtimestamp(process.create_time()).isoformat()
+        }
+        
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "system": {
+                "uptime_seconds": int(uptime_seconds),
+                "uptime_human": uptime_str,
+                "boot_time": datetime.fromtimestamp(boot_time).isoformat(),
+                "hostname": socket.gethostname(),
+                "platform": platform.platform(),
+                "python_version": platform.python_version()
+            },
+            "cpu": {
+                "usage_percent": cpu_percent,
+                "logical_cores": cpu_count_logical,
+                "physical_cores": cpu_count_physical,
+                "load_average": {
+                    "1min": round(load_avg_1m, 2),
+                    "5min": round(load_avg_5m, 2),
+                    "15min": round(load_avg_15m, 2)
+                }
+            },
+            "memory": memory_info,
+            "swap": swap_info,
+            "disk": disk_info,
+            "gpu": gpu_info,
+            "fooocus_process": process_info
+        }
+    
+    except ImportError:
+        # Fallback: use subprocess to call 'uptime' command
+        import subprocess
+        result = subprocess.run(['uptime'], capture_output=True, text=True)
+        
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "note": "psutil not available, using basic uptime command",
+            "uptime_output": result.stdout.strip(),
+            "uptime_error": result.stderr.strip() if result.stderr else None
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get system info: {str(e)}")
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
