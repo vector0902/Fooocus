@@ -83,7 +83,7 @@ def test_generate():
     """Test image generation endpoint"""
     print("\n[4/4] Testing /api/generate (this may take a while)...")
     
-    output_dir = Path("./output/test/")
+    output_dir = Path("./outputs/test/")
     output_dir.mkdir(exist_ok=True)
     
     try:
