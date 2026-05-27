@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test the /api/uptime endpoint
+Test the updated /api/uptime endpoint with accurate instance uptime
 """
 
 import requests
@@ -10,7 +10,7 @@ import sys
 API_URL = "http://127.0.0.1:7866"
 
 print("=" * 70)
-print("Testing /api/uptime Endpoint")
+print("Testing /api/uptime - Instance Uptime Endpoint")
 print("=" * 70)
 
 try:
@@ -23,82 +23,62 @@ try:
         data = response.json()
         
         print("\n" + "-" * 70)
-        print("System Information (Formatted)")
+        print("INSTANCE UPTIME (Primary - What You Need)")
         print("-" * 70)
         
-        # System info
-        if 'system' in data:
-            sys_info = data['system']
-            print(f"\n[SYSTEM]")
-            print(f"  Hostname:      {sys_info.get('hostname', 'N/A')}")
-            print(f"  Uptime:        {sys_info.get('uptime_human', 'N/A')}")
-            print(f"  Boot Time:     {sys_info.get('boot_time', 'N/A')}")
-            print(f"  Platform:      {sys_info.get('platform', 'N/A')[:60]}...")
-            print(f"  Python:        {sys_info.get('python_version', 'N/A')}")
+        # Instance uptime (the main thing)
+        if 'instance' in data:
+            inst = data['instance']
+            print(f"\n[Fooocus Instance]")
+            print(f"  Uptime:         {inst.get('uptime_human', 'N/A')}")
+            print(f"  Uptime (exact): {inst.get('uptime_seconds', 'N/A')} seconds")
+            print(f"  Started at:     {inst.get('start_time', 'N/A')}")
+            print(f"  PID:            {inst.get('pid', 'N/A')}")
         
-        # CPU info
-        if 'cpu' in data:
-            cpu = data['cpu']
-            print(f"\n[CPU]")
-            print(f"  Usage:         {cpu.get('usage_percent', 'N/A')}%")
-            print(f"  Cores (logical): {cpu.get('logical_cores', 'N/A')}")
-            print(f"  Cores (physical): {cpu.get('physical_cores', 'N/A')}")
+        # Session countdown (for temporary instances)
+        if 'session' in data:
+            sess = data['session']
+            print(f"\n[Session Countdown] (Temporary Instance)")
+            print(f"  Max Duration:   {sess.get('max_duration_human', 'N/A')}")
+            print(f"  Elapsed:        {sess.get('elapsed_human', 'N/A')} ({sess.get('usage_percent', 0)}% used)")
+            print(f"  Remaining:      {sess.get('remaining_human', 'N/A')}")
             
-            load_avg = cpu.get('load_average', {})
-            if load_avg:
-                print(f"  Load Average:")
-                print(f"    1 min:   {load_avg.get('1min', 'N/A')}")
-                print(f"    5 min:   {load_avg.get('5min', 'N/A')}")
-                print(f"    15 min:  {load_avg.get('15min', 'N/A')}")
+            if sess.get('is_expiring_soon'):
+                print("  *** WARNING: Session expiring soon (< 60s)! ***")
+            if sess.get('expired'):
+                print("  *** ERROR: Session has EXPIRED! ***")
+        else:
+            print("\n[Session Countdown] Not configured")
+            print("  To enable, set MAX_SESSION_DURATION in api_server.py")
         
-        # Memory info
-        if 'memory' in data:
-            mem = data['memory']
-            print(f"\n[MEMORY]")
-            print(f"  Total:    {mem.get('total_gb', 'N/A')} GB")
-            print(f"  Used:     {mem.get('used_gb', 'N/A')} GB ({mem.get('percent', 'N/A')}%)")
-            print(f"  Available:{mem.get('available_gb', 'N/A')} GB")
+        # System resources (secondary info)
+        if 'resources' in data:
+            res = data['resources']
+            print(f"\n[System Resources]")
+            print(f"  CPU Usage:      {res.get('cpu_percent', 'N/A')}%")
+            
+            mem = res.get('memory', {})
+            if mem:
+                print(f"  Memory:         {mem.get('used_gb', 'N/A')} GB / {mem.get('total_gb', 'N/A')} GB ({mem.get('percent', 'N/A')}%)")
+            
+            proc = res.get('process', {})
+            if proc:
+                print(f"  Process Memory: {proc.get('memory_mb', 'N/A')} MB")
+                print(f"  Process CPU:    {proc.get('cpu_percent', 'N/A')}%")
         
-        # Swap info (if available)
-        if 'swap' in data:
-            swap = data['swap']
-            if swap.get('total_gb', 0) > 0:
-                print(f"\n[SWAP]")
-                print(f"  Total: {swap['total_gb']} GB")
-                print(f"  Used:  {swap['used_gb']} GB ({swap['percent']}%)")
-        
-        # Disk info
-        if 'disk' in data:
-            disk = data['disk']
-            print(f"\n[DISK (/)]")
-            print(f"  Total: {disk.get('total_gb', 'N/A')} GB")
-            print(f"  Used:  {disk.get('used_gb', 'N/A')} GB ({disk.get('percent', 'N/A')}%)")
-            print(f"  Free:  {disk.get('free_gb', 'N/A')} GB")
-        
-        # GPU info (if available)
-        if 'gpu' in data and data['gpu']:
+        # GPU info
+        if 'gpu' in data:
             gpu = data['gpu']
             print(f"\n[GPU]")
-            print(f"  Name:           {gpu.get('name', 'N/A')}")
-            print(f"  Memory:         {gpu.get('memory_used_mb', 'N/A')} MB / {gpu.get('memory_total_mb', 'N/A')} MB")
+            print(f"  Model:          {gpu.get('name', 'N/A')}")
+            print(f"  Memory Used:    {gpu.get('memory_used_mb', 'N/A')} MB / {gpu.get('memory_total_mb', 'N/A')} MB")
             print(f"  Load:           {gpu.get('load', 'N/A')}")
-            print(f"  Temperature:    {gpu.get('temperature', 'N/A')}")
-        else:
-            print("\n[GPU] Not detected or psutil/GPU not installed")
-        
-        # Fooocus process info
-        if 'fooocus_process' in data:
-            proc = data['fooocus_process']
-            print(f"\n[FOOCUS PROCESS]")
-            print(f"  PID:          {proc.get('pid', 'N/A')}")
-            print(f"  Memory Usage: {proc.get('memory_mb', 'N/A')} MB")
-            print(f"  CPU Usage:    {proc.get('cpu_percent', 'N/A')}%")
-            print(f"  Threads:      {proc.get('num_threads', 'N/A')}")
-            print(f"  Started:      {proc.get('create_time', 'N/A')}")
         
         print("\n" + "-" * 70)
         print("[OK] /api/uptime endpoint working correctly!")
         print("-" * 70)
+        print("\nNOTE: This shows FOOOCUS INSTANCE uptime, NOT system uptime.")
+        print("      This is the time since the API server started.")
         
         # Option to show raw JSON
         if len(sys.argv) > 1 and sys.argv[1] == '--json':

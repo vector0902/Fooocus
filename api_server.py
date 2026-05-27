@@ -74,9 +74,13 @@ class StatusResponse(BaseModel):
     current_task: Optional[str] = None
 
 
-start_time = time.time()
+start_time = time.time()  # Fooocus/API instance start time
 current_task: Optional[str] = None
 task_lock = asyncio.Lock()
+
+# Optional: Set max session duration (in seconds) for temporary instances
+# Set to 0 or None to disable countdown
+MAX_SESSION_DURATION = 600  # 10 minutes (adjust based on your Cloud Studio limit)
 
 
 @app.get("/api/health")
@@ -143,136 +147,114 @@ async def get_status():
 @app.get("/api/uptime")
 async def get_system_uptime():
     """
-    Get system uptime and resource usage.
+    Get Fooocus instance uptime and system resource usage.
     
-    Returns comprehensive system information including:
-    - System uptime (human-readable format)
-    - CPU usage and load averages
-    - Memory usage (total, used, available)
-    - Disk usage
-    - Process information
+    PRIMARY: Returns accurate Fooocus instance/container uptime (time since API started)
+    SECONDARY: System resource information (CPU, memory, disk, etc.)
     
-    Uses psutil if available, otherwise falls back to subprocess.
+    This is different from system 'uptime' command - it shows how long the 
+    Fooocus service has been running, which is critical for temporary instances.
     """
+    global start_time
+    
+    # Calculate Fooocus instance uptime (the main metric you need)
+    instance_uptime_seconds = time.time() - start_time
+    
+    # Convert to human-readable format
+    days = int(instance_uptime_seconds // 86400)
+    hours = int((instance_uptime_seconds % 86400) // 3600)
+    minutes = int((instance_uptime_seconds % 3600) // 60)
+    seconds = int(instance_uptime_seconds % 60)
+    
+    instance_uptime_human = f"{days}d {hours}h {minutes}m {seconds}s"
+    
+    # Session countdown for temporary instances
+    session_info = None
+    if MAX_SESSION_DURATION and MAX_SESSION_DURATION > 0:
+        remaining_seconds = max(0, MAX_SESSION_DURATION - instance_uptime_seconds)
+        remaining_minutes = int(remaining_seconds // 60)
+        remaining_secs = int(remaining_seconds % 60)
+        
+        session_info = {
+            "max_duration_seconds": MAX_SESSION_DURATION,
+            "max_duration_human": f"{MAX_SESSION_DURATION // 60}m {MAX_SESSION_DURATION % 60}s",
+            "elapsed_seconds": round(instance_uptime_seconds, 1),
+            "elapsed_human": instance_uptime_human,
+            "remaining_seconds": round(remaining_seconds, 1),
+            "remaining_human": f"{remaining_minutes}m {remaining_secs}s",
+            "usage_percent": round((instance_uptime_seconds / MAX_SESSION_DURATION) * 100, 1),
+            "is_expiring_soon": remaining_seconds < 60,
+            "expired": remaining_seconds <= 0
+        }
+    
+    # Build response with instance uptime as primary info
+    response_data = {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "instance": {
+            "uptime_seconds": round(instance_uptime_seconds, 1),
+            "uptime_human": instance_uptime_human,
+            "start_time": datetime.fromtimestamp(start_time).isoformat(),
+            "pid": os.getpid()
+        }
+    }
+    
+    # Add session countdown if configured
+    if session_info:
+        response_data["session"] = session_info
+    
+    # Try to get additional system resources using psutil
     try:
         import psutil
         
-        # System boot time
-        boot_time = psutil.boot_time()
-        uptime_seconds = time.time() - boot_time
+        # CPU usage (quick check, no interval for speed)
+        cpu_percent = psutil.cpu_percent(interval=0.1)
         
-        # Convert to human-readable format
-        days = int(uptime_seconds // 86400)
-        hours = int((uptime_seconds % 86400) // 3600)
-        minutes = int((uptime_seconds % 3600) // 60)
-        
-        uptime_str = f"{days}d {hours}h {minutes}m"
-        
-        # CPU information
-        cpu_percent = psutil.cpu_percent(interval=1)
-        cpu_count_logical = psutil.cpu_count(logical=True)
-        cpu_count_physical = psutil.cpu_count(logical=False)
-        load_avg_1m, load_avg_5m, load_avg_15m = os.getloadavg() if hasattr(os, 'getloadavg') else (0, 0, 0)
-        
-        # Memory information
+        # Memory
         mem = psutil.virtual_memory()
         memory_info = {
             "total_gb": round(mem.total / (1024**3), 2),
             "used_gb": round(mem.used / (1024**3), 2),
-            "available_gb": round(mem.available / (1024**3), 2),
             "percent": mem.percent
         }
         
-        # Swap information
-        swap = psutil.swap_memory()
-        swap_info = {
-            "total_gb": round(swap.total / (1024**3), 2),
-            "used_gb": round(swap.used / (1024**3), 2),
-            "percent": swap.percent
+        # Current process resource usage
+        process = psutil.Process(os.getpid())
+        process_info = {
+            "memory_mb": round(process.memory_info().rss / (1024**2), 2),
+            "cpu_percent": process.cpu_percent(interval=0.1),
+            "num_threads": process.num_threads()
         }
         
-        # Disk information (current partition)
-        disk = psutil.disk_usage('/')
-        disk_info = {
-            "total_gb": round(disk.total / (1024**3), 2),
-            "used_gb": round(disk.used / (1024**3), 2),
-            "free_gb": round(disk.free / (1024**3), 2),
-            "percent": disk.percent
+        response_data["resources"] = {
+            "cpu_percent": cpu_percent,
+            "memory": memory_info,
+            "process": process_info
         }
         
-        # GPU information (if available)
-        gpu_info = None
+        # GPU info if available (optional)
         try:
             import GPUtil
             gpus = GPUtil.getGPUs()
             if gpus:
                 gpu = gpus[0]
-                gpu_info = {
+                response_data["gpu"] = {
                     "name": gpu.name,
-                    "memory_total_mb": int(gpu.memoryTotal),
                     "memory_used_mb": int(gpu.memoryUsed),
-                    "memory_free_mb": int(gpu.memoryFree),
-                    "load": f"{gpu.load*100:.1f}%",
-                    "temperature": f"{gpu.temperature}°C" if gpu.temperature else "N/A"
+                    "memory_total_mb": int(gpu.memoryTotal),
+                    "load": f"{gpu.load*100:.1f}%"
                 }
-        except ImportError:
+        except:
             pass
-        except Exception:
-            pass
-        
-        # Current process info
-        process = psutil.Process(os.getpid())
-        process_info = {
-            "pid": process.pid,
-            "memory_mb": round(process.memory_info().rss / (1024**2), 2),
-            "cpu_percent": process.cpu_percent(),
-            "num_threads": process.num_threads(),
-            "create_time": datetime.fromtimestamp(process.create_time()).isoformat()
-        }
-        
-        return {
-            "status": "ok",
-            "timestamp": datetime.now().isoformat(),
-            "system": {
-                "uptime_seconds": int(uptime_seconds),
-                "uptime_human": uptime_str,
-                "boot_time": datetime.fromtimestamp(boot_time).isoformat(),
-                "hostname": socket.gethostname(),
-                "platform": platform.platform(),
-                "python_version": platform.python_version()
-            },
-            "cpu": {
-                "usage_percent": cpu_percent,
-                "logical_cores": cpu_count_logical,
-                "physical_cores": cpu_count_physical,
-                "load_average": {
-                    "1min": round(load_avg_1m, 2),
-                    "5min": round(load_avg_5m, 2),
-                    "15min": round(load_avg_15m, 2)
-                }
-            },
-            "memory": memory_info,
-            "swap": swap_info,
-            "disk": disk_info,
-            "gpu": gpu_info,
-            "fooocus_process": process_info
-        }
-    
+            
     except ImportError:
-        # Fallback: use subprocess to call 'uptime' command
-        import subprocess
-        result = subprocess.run(['uptime'], capture_output=True, text=True)
-        
-        return {
-            "status": "ok",
-            "timestamp": datetime.now().isoformat(),
-            "note": "psutil not available, using basic uptime command",
-            "uptime_output": result.stdout.strip(),
-            "uptime_error": result.stderr.strip() if result.stderr else None
-        }
+        # psutil not available - just return basic instance uptime
+        response_data["note"] = "psutil not installed - showing minimal info"
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get system info: {str(e)}")
+        response_data["resource_error"] = str(e)
+    
+    return response_data
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
