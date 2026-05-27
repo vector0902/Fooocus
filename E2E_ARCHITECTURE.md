@@ -12,6 +12,72 @@
 
 ## 2. 系统架构图
 
+**Mermaid 架构图格式** (GitHub/GitLab 原生渲染):
+
+```mermaid
+graph TB
+    subgraph Local["本地环境"]
+        Client["test_local_model.py<br/>(测试客户端)"]
+    end
+
+    subgraph Remote["Cloud Studio 远程服务器"]
+        subgraph Fooocus["Fooocus 实例"]
+            WebUI["Gradio WebUI<br/>(原始界面)"]
+            API["api_server.py<br/>(REST API 服务)"]
+            Worker["async_worker.py<br/>(任务处理线程)"]
+            
+            API -->|调用| Worker
+            WebUI -.->|共享| Worker
+        end
+        
+        Output["outputs/<br/>(生成图像目录)"]
+        Worker -->|保存图像| Output
+    end
+
+    Client -->|"HTTP/REST<br/>POST /v1/generation/text-to-image"| API
+    Client -->|"GET /files"| Output
+    
+    style Local fill:#e1f5fe,stroke:#0288d1,color:#01579b
+    style Remote fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
+    style Fooocus fill:#fff9c4,stroke:#f9a825,color:#f57f17
+    style Client fill:#c8e6c9,stroke:#388e3c,color:#1b5e20
+    style API fill:#ffccbc,stroke:#e64a19,color:#bf360c
+    style Worker fill:#d1c4e9,stroke:#512da8,color:#311b92
+```
+
+**PlantUML 组件图格式** (需 PlantUML 工具渲染):
+
+```plantuml
+@startuml
+!theme plain
+left to right direction
+skinparam packageStyle rectangle
+
+package "本地环境" as Local {
+    [test_local_model.py\n(测试客户端)] as Client
+}
+
+package "Cloud Studio 远程服务器" as Remote {
+    package "Fooocus 实例" as Fooocus {
+        [Gradio WebUI\n(原始界面)] as WebUI
+        [api_server.py\n(REST API 服务)] as API
+        [async_worker.py\n(任务处理线程)] as Worker
+    }
+    
+    [outputs/\n(生成图像目录)] as Output
+}
+
+Client --> API : HTTP/REST\nPOST /v1/generation/text-to-image
+Client --> Output : GET /files
+API --> Worker : 调用
+Worker --> Output : 保存图像
+WebUI ..> Worker : 共享
+
+@enduml
+```
+
+**ASCII 备选格式**:
+
 ```
 +------------------+     HTTP/REST      +------------------------+
 |                  |  <------------->   |                        |
@@ -339,6 +405,28 @@ def generate(self, prompt, negative_prompt="", ...):
 
 假设每个图像生成需要 25 秒：
 
+**Mermaid 甘特图格式**:
+
+```mermaid
+gantt
+    title Fooocus 任务队列执行时间线 (每个任务 25s)
+    dateFormat X
+    axisFormat %ss
+
+    section Task Queue
+    Request A (A1)           :a1, 0, 25s
+    Request B (A2)           :a2, after a1, 25s
+    Request C (A3)           :a3, after a2, 25s
+    Request D (B1)           :a4, after a3, 25s
+    Request E (B2)           :a5, after a4, 25s
+    ...                      :crit, after a5, 175s
+
+    section Summary
+    Total 12 tasks           :milestone, m1, 0, 300s
+```
+
+**ASCII 备选格式**:
+
 ```
 时间轴: 0s      25s      50s      75s      100s     125s     ...
        |        |        |        |         |        |
@@ -351,6 +439,29 @@ def generate(self, prompt, negative_prompt="", ...):
 总耗时计算:
 - 12 个测试用例 × 25秒/用例 = ~300 秒（约 5 分钟）
 - 加上排队等待时间 ≈ 总共 5-6 分钟
+```
+
+**PlantUML 时序图格式**:
+
+```plantuml
+@startuml
+!theme plain
+robust "Request A" as RA #LightBlue
+robust "Request B" as RB #LightBlue
+robust "Request C" as RC #LightBlue
+robust "Request D" as RD #LightBlue
+
+@0
+RA is Active
+@{25s} RA is Finished
+RB is Active
+@{50s} RB is Finished
+RC is Active
+@{75s} RC is Finished
+RD is Active
+@{100s} RD is Finished
+
+@enduml
 ```
 
 ### 4.5.4 为什么选择同步阻塞而非异步模式？
@@ -432,6 +543,73 @@ POST /v1/generation/text-to-image → {"images": ["data:image/png;base64,..."], 
 ## 5. 数据流详解
 
 ### 5.1 请求流程
+
+**Mermaid 序列图格式**:
+
+```mermaid
+sequenceDiagram
+    participant T as test_local_model.py
+    participant A as api_server.py
+    participant W as async_worker.py
+
+    Note over T: 加载 prompts_default.json<br/>12 个测试用例
+
+    loop 对每个 prompt (A1-E3)
+        T->>A: POST /v1/generation/text-to-image<br/>{prompt, negative_prompt, ...}
+        activate A
+        
+        A->>A: 加入队列 (FIFO)
+        A->>W: async_tasks.append(task)
+        activate W
+        W->>W: handler(task) 执行生成 (20-30s)
+        W-->>A: task.results = [image_paths]
+        deactivate W
+        
+        A-->>T: 200 OK {images: ["data:image/png;base64,..."]}
+        deactivate A
+
+        T->>T: base64 解码 → 保存 PNG 文件
+        T->>T: 记录结果到 report
+    end
+
+    Note over T: 生成 local_test_report.json<br/>Summary: X/12 successful
+```
+
+**PlantUML 活动图格式**:
+
+```plantuml
+@startuml
+!theme plain
+|test_local_model.py|
+start
+:加载 prompts_default.json;
+repeat :读取下一个 prompt;
+  |api_server.py|
+  :接收 POST 请求;
+  :加入 FIFO 队列;
+  :等待前一个任务完成;
+  
+  |async_worker.py|
+  :执行图像生成 (20-30s);
+  :返回 image_paths;
+  
+  |api_server.py|
+  :base64 编码图像;
+  :返回 JSON 响应;
+  
+  |test_local_model.py|
+  :解码 base64 数据;
+  :保存为 PNG 文件;
+  :记录结果;
+repeat until (12 个 prompt 处理完成)
+
+:生成测试报告;
+
+stop
+@enduml
+```
+
+**ASCII 备选格式**:
 
 ```
 test_local_model.py                    api_server.py              async_worker.py
@@ -694,6 +872,64 @@ curl https://<instance-url>/files/
 
 ---
 
+## 附录 A: 图表格式说明
+
+本文档使用三种图表格式，以适应不同的查看环境：
+
+### 格式对比
+
+| 格式 | 渲染方式 | 适用场景 | 优点 | 缺点 |
+|------|---------|---------|------|------|
+| **Mermaid** | GitHub/GitLab/VS Code 原生渲染 | 在线文档、README | 无需额外工具、实时渲染 | 离线无法查看 |
+| **PlantUML** | 需要 PlantUML 工具或在线服务 | 正式文档、导出图片 | 功能强大、样式丰富 | 需要安装工具 |
+| **ASCII** | 任何文本编辑器 | 终端、纯文本、代码注释 | 通用性强、无需渲染 | 复杂图表难以维护 |
+
+### 使用建议
+
+1. **GitHub/GitLab 文档**: 优先使用 Mermaid（自动渲染）
+2. **导出为 PDF/PNG**: 使用 PlantUML（样式更专业）
+3. **代码注释或终端**: 使用 ASCII（兼容性最好）
+4. **本文档策略**: 三种格式都提供，读者根据环境选择
+
+### Mermaid 快速参考
+
+```mermaid
+graph LR
+    A[Markdown 文件] --> B{查看环境?}
+    B -->|GitHub/GitLab| C[Mermaid 自动渲染]
+    B -->|VS Code| D[Mermaid 插件渲染]
+    B -->|离线/终端| E[使用 ASCII 版本]
+```
+
+### PlantUML 渲染方法
+
+**方法 1: 在线服务**
+- 访问 http://www.plantuml.com/plantuml/
+- 粘贴代码，自动生成图片
+
+**方法 2: 本地安装**
+```bash
+# 安装 Java 和 PlantUML
+sudo apt install default-jre
+sudo apt install plantuml
+
+# 渲染为 PNG
+plantuml diagram.puml -tpng
+
+# 渲染为 SVG
+plantuml diagram.puml -tsvg
+
+# 渲染为 PDF
+plantuml diagram.puml -tpdf
+```
+
+**方法 3: VS Code 插件**
+- 安装 "PlantUML" 扩展
+- 预览：`Alt+D`
+- 导出：右键 → Export Diagram
+
+---
+
 ## 附录 B: 版本历史
 
 | 版本 | 日期       | 变更                                 |
@@ -701,6 +937,7 @@ curl https://<instance-url>/files/
 | v1.0 | 2026-05-27 | 初始版本：基础 API + 任务队列        |
 | v1.1 | 2026-05-27 | 添加 /api/uptime、静态文件服务       |
 | v1.2 | 2026-05-27 | 实现 FIFO 任务队列、修复 base64 解码 |
+| v1.3 | 2026-05-27 | 添加 Mermaid/PlantUML 专业图表格式、同步阻塞模型详细文档、图表格式说明附录 |
 
 ---
 
