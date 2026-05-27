@@ -169,6 +169,266 @@ async def generate_text_to_image_compat(request: FooocusCompatRequest):
 
 ---
 
+## 4.5 同步阻塞请求模型（核心设计决策）
+
+### 4.5.1 设计原则：每个请求自动阻塞等待结果
+
+**当前实现采用同步阻塞模式**，这是整个方案的核心设计选择。
+
+#### 行为特征
+
+**Mermaid 序列图格式** (GitHub/GitLab 原生渲染):
+
+```mermaid
+sequenceDiagram
+    participant C as test_local_model.py<br/>(客户端)
+    participant A as api_server.py<br/>(API 服务)
+    participant W as async_worker.py<br/>(Worker 线程)
+
+    C->>A: POST /v1/generation/text-to-image<br/>{prompt: "A red envelope..."}
+    activate A
+    
+    Note over A,C: HTTP 连接保持打开<br/>[阻塞等待中: 20-30秒]
+    
+    A->>A: 创建 Future, 加入队列
+    A->>A: 等待前一个任务完成 (如有)
+    
+    A->>W: async_tasks.append(task)
+    activate W
+    W->>W: handler(task) 执行生成
+    W-->>A: task.yields = ['finish', results]
+    deactivate W
+    
+    A-->>C: 200 OK<br/>{images: ["data:image/png;base64,..."], success: true}
+    deactivate A
+    
+    Note over C: 收到完整 base64 图像数据<br/>解码并保存为 PNG 文件
+```
+
+**ASCII 备选格式**:
+
+```
+客户端 (test_local_model.py)                    服务器 (api_server.py)
+       |                                              |
+       |-- POST /v1/generation/text-to-image -------->|
+       |    {prompt: "A red envelope..."}              |
+       |                                              |
+       |         [HTTP 连接保持打开]                    |
+       |         [阻塞等待中...]                        |
+       |         (通常 20-30 秒/张)                    |
+       |                                              |
+       |<-- 200 OK {images: [...], success: true} ----|
+       |         (收到完整的 base64 图像数据)           |
+       |                                              |
+```
+
+**PlantUML 格式** (需 PlantUML 工具渲染):
+
+```plantuml
+@startuml
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "test_local_model.py\n(客户端)" as C
+participant "api_server.py\n(API 服务)" as A
+participant "async_worker.py\n(Worker 线程)" as W
+
+C -> A: POST /v1/generation/text-to-image\n{prompt: "A red envelope..."}
+activate A #LightBlue
+
+note right of A #F0F0F0
+  HTTP 连接保持打开
+  [阻塞等待中: 20-30秒]
+end note
+
+A -> A: 创建 Future, 加入队列
+A -> A: 等待前一个任务完成 (如有)
+
+A -> W: async_tasks.append(task)
+activate W #LightGreen
+W -> W: handler(task) 执行生成
+W --> A: task.yields = ['finish', results]
+deactivate W
+
+A --> C: 200 OK\n{images: ["data:image/png;base64,..."]}
+deactivate A
+
+note left of C #FFF0F0
+  收到完整 base64 图像数据
+  解码并保存为 PNG 文件
+end note
+
+@enduml
+```
+
+**关键点：**
+- **自动排队** - 如果前面有任务在运行，新请求会自动加入队列并等待
+- **阻塞等待** - HTTP 连接保持打开，直到图像生成完成
+- **返回完整结果** - 一次性返回所有生成的图像数据（base64 编码）
+- **对客户端透明** - 客户端只需发送一次 POST 请求，无需轮询或重试
+
+### 4.5.2 代码级工作流
+
+```python
+# api_server.py - 服务端处理逻辑
+
+@app.post("/v1/generation/text-to-image")
+async def generate_text_to_image_compat(request: FooocusCompatRequest):
+    start_time = time.time()
+    
+    # 步骤 1: 创建 Future 并加入队列
+    task_future = asyncio.Future()
+    async with queue_lock:
+        pending_futures.append(task_future)
+        queue_position = len(pending_futures)
+    
+    # 步骤 2: 如果不是队列中的第一个，等待前一个完成
+    #        (这里会阻塞 HTTP 响应)
+    if queue_position > 1:
+        print(f'[API] Task queued at position {queue_position}, waiting...')
+        await asyncio.wait_for(pending_futures[queue_position - 2], timeout=600)
+    
+    try:
+        # 步骤 3: 执行实际的图像生成
+        #        (这里也会阻塞，直到 worker 线程完成任务)
+        result = await call_fooocus_generate(internal_request)
+        
+        # 步骤 4: 返回结果给客户端
+        return {
+            "images": result.get("images", []),
+            "success": True,
+            "processing_time": time.time() - start_time
+        }
+    
+    finally:
+        # 步骤 5: 标记本任务完成，唤醒队列中的下一个任务
+        if not task_future.done():
+            task_future.set_result(True)
+```
+
+```python
+# test_local_model.py - 客户端调用逻辑
+
+def generate(self, prompt, negative_prompt="", ...):
+    start_time = time.time()
+    
+    payload = {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        ...
+    }
+    
+    # 发送 POST 请求 - 这里会阻塞 20-30 秒
+    response = requests.post(
+        f"{self.url}/v1/generation/text-to-image",
+        json=payload,
+        timeout=300  # 设置 5 分钟超时保护
+    )
+    response.raise_for_status()
+    result = response.json()
+    
+    # 处理返回的图像数据
+    for img_data in result["images"]:
+        self.save_image_from_base64(img_data, filepath)
+    
+    return {"success": True, "images": saved_images, ...}
+```
+
+### 4.5.3 时间线示例
+
+假设每个图像生成需要 25 秒：
+
+```
+时间轴: 0s      25s      50s      75s      100s     125s     ...
+       |        |        |        |         |        |
+请求 A: [========执行=========]→ 返回结果 (25s)
+请求 B:          [==排队等待==][========执行=========]→ 返回结果 (50s)
+请求 C:                    [==排队等待==][========执行=========]→ 返回结果 (75s)
+请求 D:                              [==排队等待==][========执行=========]→ 返回结果 (100s)
+...
+
+总耗时计算:
+- 12 个测试用例 × 25秒/用例 = ~300 秒（约 5 分钟）
+- 加上排队等待时间 ≈ 总共 5-6 分钟
+```
+
+### 4.5.4 为什么选择同步阻塞而非异步模式？
+
+| 对比维度 | 同步阻塞（当前方案） | 异步模式（task_id + 轮询） |
+|---------|-------------------|------------------------|
+| **客户端复杂度** | 简单：一次 `requests.post()` | 复杂：提交 → 轮询 → 获取结果 |
+| **错误处理** | 直观：直接看 HTTP 状态码和响应体 | 需要处理多种状态（pending/running/done/error） |
+| **超时控制** | 简单：`timeout=300` 参数 | 需要自定义超时重试逻辑 |
+| **代码行数** | ~10 行核心代码 | ~50+ 行（提交、查询、重试、状态机） |
+| **适用场景** | 批量顺序测试、简单集成 | 高并发、长耗时任务、实时进度显示 |
+
+**选择同步的原因：**
+
+1. **测试脚本需求匹配**
+   - `test_local_model.py` 需要顺序执行 12 个测试用例
+   - 每个用例独立，不需要并行提交
+   - 需要立即知道成功/失败以便记录报告
+
+2. **实现简洁性**
+   - Python 的 `requests` 库天然支持同步 HTTP 调用
+   - 无需引入额外的异步客户端库（如 httpx/aiohttp）
+   - 错误处理直观：`try-except` 包裹即可
+
+3. **与原始 WebUI 一致**
+   - Gradio WebUI 也是"提交 → 等待 → 显示结果"
+   - 只是 WebUI 通过 WebSocket 显示进度条
+   - 我们的 API 本质上相同，只是没有中间的进度反馈
+
+4. **调试友好**
+   - 可以用 `curl` 直接测试：
+     ```bash
+     curl -X POST https://<url>/v1/generation/text-to-image \
+       -H "Content-Type: application/json" \
+       -d '{"prompt":"a cat"}'
+     # 直接看到结果或错误
+     ```
+
+### 4.5.5 性能影响分析
+
+**优点：**
+- ✅ 避免了轮询开销（不需要每秒查询一次状态）
+- ✅ 减少网络往返次数（1 次请求 vs N 次轮询）
+- ✅ 服务器资源利用更高效（连接复用）
+
+**缺点：**
+- ❌ HTTP 连接长时间占用（20-30 秒/请求）
+- ❌ 对高并发场景不友好（大量长连接消耗服务器资源）
+- ❌ 无法提供实时进度反馈（除非升级为 SSE/WebSocket）
+
+**适用性评估：**
+- ✅ 当前场景（单客户端、批量测试）：**完全适合**
+- ❌ 生产环境（多用户并发）：需考虑升级为异步模式
+
+### 4.5.6 与其他 API 设计的对比
+
+**OpenAI DALL-E 风格（异步 + 轮询）：**
+```python
+# 提交任务
+POST /v1/images/generations → {"task_id": "abc123", "status": "pending"}
+
+# 轮询状态
+GET /v1/tasks/abc123 → {"status": "processing", "progress": 45%}
+
+# 获取结果
+GET /v1/tasks/abc123 → {"status": "completed", "image_url": "..."}
+```
+
+**我们的风格（同步阻塞）：**
+```python
+# 一步到位
+POST /v1/generation/text-to-image → {"images": ["data:image/png;base64,..."], "success": true}
+```
+
+**结论：** 对于自动化测试场景，同步模式更实用；对于生产级多用户服务，异步模式更合适。
+
+---
+
 ## 5. 数据流详解
 
 ### 5.1 请求流程
