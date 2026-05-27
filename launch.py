@@ -150,3 +150,29 @@ config.update_files()
 init_cache(config.model_filenames, config.paths_checkpoints, config.lora_filenames, config.paths_loras)
 
 from webui import *
+
+# Start REST API server if enabled
+if hasattr(args, 'enable_api') and args.enable_api:
+    api_host = getattr(args, 'api_host', '127.0.0.1')
+    api_port = getattr(args, 'api_port', 7866)
+    print(f'[API] Starting REST API on {api_host}:{api_port}')
+    
+    import threading
+    import uvicorn
+    from api_server import app
+    
+    def start_api():
+        try:
+            uvicorn.run(
+                app,
+                host=api_host,
+                port=api_port,
+                log_level="info"
+            )
+        except Exception as e:
+            print(f'[API] Failed to start: {e}')
+    
+    api_thread = threading.Thread(target=start_api, daemon=True)
+    api_thread.start()
+    print('[API] REST API started in background thread')
+    print(f'[API] API endpoints available at http://{api_host}:{api_port}/docs')

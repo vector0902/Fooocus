@@ -40,6 +40,16 @@ args_parser.parser.add_argument("--always-download-new-model", action='store_tru
 args_parser.parser.add_argument("--rebuild-hash-cache", help="Generates missing model and LoRA hashes.",
                                 type=int, nargs="?", metavar="CPU_NUM_THREADS", const=-1)
 
+# REST API arguments
+args_parser.parser.add_argument("--enable-api", action='store_true',
+                                help="Enable REST API server for programmatic access.")
+
+args_parser.parser.add_argument("--api-port", type=int, default=7866,
+                                help="Port for REST API server. Default: 7866")
+
+args_parser.parser.add_argument("--api-host", type=str, default="127.0.0.1",
+                                help="Host for REST API server. Default: 127.0.0.1")
+
 args_parser.parser.set_defaults(
     disable_cuda_malloc=True,
     in_browser=True,
