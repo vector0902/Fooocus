@@ -45,7 +45,7 @@ app.add_middleware(
 )
 
 # File browser configuration
-OUTPUT_DIR = Path("output")
+OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure output directory exists
 
 # Mount static files for direct file access (e.g., /files/output/image.png)
