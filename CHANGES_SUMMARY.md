@@ -288,7 +288,7 @@ Fooocus REST API Test Suite
 
 [4/4] Testing /api/generate...
    Generating... [OK] Image generated successfully!
-      Saved to: ./test_output/test_apple.png
+      Saved to: ./output/test/test_apple.png
       Size: 1234.5 KB
       Time: 12.34s
       Seed: 42

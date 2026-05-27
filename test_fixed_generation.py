@@ -68,7 +68,7 @@ try:
                 import base64
                 from pathlib import Path
                 
-                output_dir = Path("./test_output")
+                output_dir = Path("./output/test/")
                 output_dir.mkdir(exist_ok=True)
                 
                 img_b64 = images[0]
