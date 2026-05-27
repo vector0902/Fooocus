@@ -47,8 +47,8 @@ args_parser.parser.add_argument("--enable-api", action='store_true',
 args_parser.parser.add_argument("--api-port", type=int, default=7866,
                                 help="Port for REST API server. Default: 7866")
 
-args_parser.parser.add_argument("--api-host", type=str, default="127.0.0.1",
-                                help="Host for REST API server. Default: 127.0.0.1")
+args_parser.parser.add_argument("--api-host", type=str, default="0.0.0.0",
+                                help="Host for REST API server.")
 
 args_parser.parser.set_defaults(
     disable_cuda_malloc=True,
