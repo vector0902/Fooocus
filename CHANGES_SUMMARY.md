@@ -1,6 +1,6 @@
 # Fooocus REST API - 修改总结
 
-## 📝 修改文件清单
+## 修改文件清单
 
 ### 1. 新增文件
 
@@ -77,7 +77,7 @@
 
 ---
 
-## 🚀 快速部署
+## 快速部署
 
 ### 方法 1：直接使用（推荐）
 
@@ -106,40 +106,40 @@ python entry_with_update.py \
 
 ---
 
-## 📊 架构图
+## 架构图
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Fooocus 进程                              │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────┐        ┌──────────────────────────┐   │
-│  │   launch.py     │        │   api_server.py          │   │
-│  │                 │        │                          │   │
-│  │  1. 准备环境     │        │  /api/health             │   │
-│  │  2. 加载模型     │ ────>  │  /api/generate ⭐         │   │
-│  │  3. 启动 WebUI  │        │  /api/models              │   │
-│  │     (port 7865) │        │  /api/styles              │   │
-│  │                 │        │  /api/status              │   │
-│  │  [新增] 4. 启动  │        │                          │   │
-│  │       API Server │        │  FastAPI + Uvicorn        │   │
-│  │       (port 7866)│        │  后台线程运行              │   │
-│  └─────────────────┘        └──────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-         │                                    │
-         ▼                                    ▼
-┌─────────────────┐                ┌─────────────────┐
-│   Browser UI    │                │   HTTP Client   │
-│   :7865         │                │   :7866          │
-│                 │                │                 │
-│  Gradio 界面     │                │  REST API 调用   │
-└─────────────────┘                └─────────────────┘
++-------------------------------------------------------------+
+|                    Fooocus 进程                              |
++-------------------------------------------------------------+
+|                                                             |
+|  +-----------------+        +--------------------------+   |
+|  |   launch.py     |        |   api_server.py          |   |
+|  |                 |        |                          |   |
+|  |  1. 准备环境     |        |  /api/health             |   |
+|  |  2. 加载模型     | ---->  |  /api/generate *         |   |
+|  |  3. 启动 WebUI  |        |  /api/models              |   |
+|  |     (port 7865) |        |  /api/styles              |   |
+|  |                 |        |  /api/status              |   |
+|  | [新增] 4. 启动  |        |                          |   |
+|  |       API Server |        |  FastAPI + Uvicorn        |   |
+|  |       (port 7866)|        |  后台线程运行              |   |
+|  +-----------------+        +--------------------------+   |
+|                                                             |
++-------------------------------------------------------------+
+         |                                    |
+         v                                    v
++-----------------+                +-----------------+
+|   Browser UI    |                |   HTTP Client   |
+|   :7865         |                |   :7866          |
+|                 |                |                 |
+|  Gradio 界面     |                |  REST API 调用   |
++-----------------+                +-----------------+
 ```
 
 ---
 
-## 🔍 代码变更详情
+## 代码变更详情
 
 ### args_manager.py 变更
 
@@ -217,11 +217,11 @@ if hasattr(args, 'enable_api') and args.enable_api:
 
 ---
 
-## ✅ 兼容性保证
+## 兼容性保证
 
 ### 向后兼容性
 
-✅ **100% 向后兼容**
+[OK] **100% 向后兼容**
 - 所有新参数都是可选的
 - 不使用 `--enable-api` 时，行为与原版完全一致
 - 不影响任何现有功能
@@ -229,13 +229,13 @@ if hasattr(args, 'enable_api') and args.enable_api:
 
 ### 版本兼容性
 
-- ✅ 基于 Fooocus 2.5.5 开发
-- ✅ 可适配未来版本（只需调整参数列表）
-- ⚠️ 注意：Fooocus 升级可能需要更新 `build_args_from_request()` 函数中的参数顺序
+- [OK] 基于 Fooocus 2.5.5 开发
+- [OK] 可适配未来版本（只需调整参数列表）
+- [!] 注意：Fooocus 升级可能需要更新 `build_args_from_request()` 函数中的参数顺序
 
 ---
 
-## 🧪 测试方法
+## 测试方法
 
 ### 1. 单元测试端点
 
@@ -271,23 +271,23 @@ Fooocus REST API Test Suite
 ============================================================
 
 [1/4] Testing /api/health...
-✅ Health check passed
+[OK] Health check passed
 
 [2/4] Testing /api/status...
    Status: idle
    Version: 2.5.5
    Uptime: 12.3s
-✅ Status endpoint working
+[OK] Status endpoint working
 
 [3/4] Testing /api/models...
    Found 8 models:
      - [base] juggernautXL_v8Rundiffusion.safetensors
      - [lora] sd_xl_offset_example-lora_1.0.safetensors
      ...
-✅ Models endpoint working
+[OK] Models endpoint working
 
 [4/4] Testing /api/generate...
-   Generating... ✅ Image generated successfully!
+   Generating... [OK] Image generated successfully!
       Saved to: ./test_output/test_apple.png
       Size: 1234.5 KB
       Time: 12.34s
@@ -296,40 +296,40 @@ Fooocus REST API Test Suite
 ============================================================
 Test Summary
 ============================================================
-  Health Check          ✅ PASS
-  Status                ✅ PASS
-  Models                ✅ PASS
-  Generate Image        ✅ PASS
+  Health Check          [OK] PASS
+  Status                [OK] PASS
+  Models                [OK] PASS
+  Generate Image        [OK] PASS
 
 Total: 4/4 tests passed
 
-🎉 All tests passed! API is working correctly.
+[DONE] All tests passed! API is working correctly.
 ```
 
 ---
 
-## 📈 性能影响
+## 性能影响
 
 ### 资源占用
 
-| 项目 | 影响 |
-|------|------|
-| 内存 | +~10MB (FastAPI + Uvicorn) |
-| CPU | <1% (空闲时) |
-| 端口 | +1 (7866 或自定义) |
-| 启动时间 | +<1秒 |
-| 对原有性能 | **无影响** |
+| 项目       | 影响                       |
+|------------|----------------------------|
+| 内存       | +~10MB (FastAPI + Uvicorn) |
+| CPU        | <1% (空闲时)               |
+| 端口       | +1 (7866 或自定义)         |
+| 启动时间   | +<1秒                      |
+| 对原有性能 | **无影响**                 |
 
 ### 并发支持
 
-- ✅ 支持并发请求排队
-- ✅ 同一时间只处理一个生成任务
-- ✅ 其他请求立即返回状态信息
-- ✅ 异步非阻塞设计
+- [OK] 支持并发请求排队
+- [OK] 同一时间只处理一个生成任务
+- [OK] 其他请求立即返回状态信息
+- [OK] 异步非阻塞设计
 
 ---
 
-## 🔧 未来改进方向
+## 未来改进方向
 
 ### v1.1 计划
 - [ ] 添加认证机制（API Key）
@@ -351,7 +351,7 @@ Total: 4/4 tests passed
 
 ---
 
-## 📞 技术支持
+## 技术支持
 
 ### 常见问题
 
@@ -365,11 +365,11 @@ A: 打开浏览器访问 `http://127.0.0.1:7866/docs`
 A: 检查 Fooocus 主日志，或调用 `/api/status` 查看当前任务状态
 
 **Q: 能否同时使用 WebUI 和 API？**
-A: ✅ 可以！它们在同一个进程中并行运行
+A: [OK] 可以！它们在同一个进程中并行运行
 
 ---
 
-## 📄 许可证
+## 许可证
 
 遵循原版 Fooocus 的许可证协议。
 

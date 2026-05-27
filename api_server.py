@@ -45,7 +45,7 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="Text prompt for generation")
     negative_prompt: str = Field("", description="Negative prompt")
     style: str = Field("Fooocus V2", description="Style selection")
-    aspect_ratio: str = Field("1024×1024", description="Image aspect ratio (e.g., 1024×1024, 1152×896)")
+    aspect_ratio: str = Field("1024x1024", description="Image aspect ratio (e.g., 1024x1024, 1152x896)")
     steps: int = Field(20, ge=1, le=200, description="Number of steps")
     seed: int = Field(-1, description="Random seed (-1 for random)")
     performance: str = Field("Speed", enum=["Speed", "Quality"], description="Performance mode")

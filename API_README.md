@@ -1,22 +1,21 @@
 # Fooocus REST API - 使用指南
 
-## 📋 概述
+## 概述
 
 本 fork 在原始 Fooocus 基础上添加了 REST API 支持，提供简单的 HTTP 接口进行图像生成。
 
-## ✨ 新增功能
+## 新增功能
 
 - **REST API 端点**：标准 HTTP 接口，支持任何语言调用
 - **简化参数**：只需 7 个核心参数（vs Gradio 的 152 个）
 - **自动文档**：Swagger UI 自动生成
 - **完全兼容**：不影响原有功能，可选启用
 
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 启动 Fooocus with API
 
 ```bash
-
 # 基本启动（API 监听 127.0.0.1:7866）
 python entry_with_update.py --listen --enable-api
 
@@ -30,7 +29,7 @@ python entry_with_update.py --listen --enable-api --api-host 0.0.0.0 --api-port 
 - **Swagger UI**: `http://127.0.0.1:7866/docs`
 - **ReDoc**: `http://127.0.0.1:7866/redoc`
 
-## 📡 API 端点
+## API 端点
 
 ### 1. 健康检查
 
@@ -84,7 +83,7 @@ curl http://127.0.0.1:7866/api/status
 }
 ```
 
-### 5. ⭐ 生成图像（核心端点）
+### 5. [CORE] 生成图像（核心端点）
 
 ```bash
 curl -X POST http://127.0.0.1:7866/api/generate \
@@ -93,7 +92,7 @@ curl -X POST http://127.0.0.1:7866/api/generate \
     "prompt": "a red apple on a wooden table",
     "negative_prompt": "",
     "style": "Fooocus V2",
-    "aspect_ratio": "1024×1024",
+    "aspect_ratio": "1024x1024",
     "steps": 20,
     "seed": -1,
     "performance": "Speed"
@@ -118,18 +117,18 @@ curl -X POST http://127.0.0.1:7866/api/generate \
 
 #### 参数说明
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `prompt` | string | ✅ | - | 正向提示词 |
-| `negative_prompt` | string | ❌ | "" | 负向提示词 |
-| `style` | string | ❌ | "Fooocus V2" | 样式名称 |
-| `aspect_ratio` | string | ❌ | "1024×1024" | 宽高比（使用 × 符号）|
-| `steps` | integer | ❌ | 20 | 生成步数 (1-200) |
-| `seed` | integer | ❌ | -1 | 随机种子 (-1 为随机) |
-| `performance` | string | ❌ | "Speed" | 性能模式 ("Speed"/"Quality") |
-| `output_format` | string | ❌ | "png" | 输出格式 ("png"/"jpg") |
+| 参数              | 类型    | 必填 | 默认值       | 说明                         |
+|-------------------|---------|------|--------------|------------------------------|
+| `prompt`          | string  | [REQ]| -            | 正向提示词                   |
+| `negative_prompt` | string  |      | ""           | 负向提示词                   |
+| `style`           | string  |      | "Fooocus V2" | 样式名称                     |
+| `aspect_ratio`    | string  |      | "1024x1024"  | 宽高比（使用 x 符号）        |
+| `steps`           | integer |      | 20           | 生成步数 (1-200)             |
+| `seed`            | integer |      | -1           | 随机种子 (-1 为随机)         |
+| `performance`     | string  |      | "Speed"      | 性能模式 ("Speed"/"Quality") |
+| `output_format`   | string  |      | "png"        | 输出格式 ("png"/"jpg")       |
 
-## 💻 Python 客户端示例
+## Python 客户端示例
 
 ### 基本用法
 
@@ -158,11 +157,11 @@ def generate_image(prompt, output_path="output.png"):
         with open(output_path, "wb") as f:
             f.write(img_data)
         
-        print(f"✅ Image saved to {output_path}")
+        print(f"[OK] Image saved to {output_path}")
         print(f"   Processing time: {result['processing_time']:.2f}s")
         return True
     else:
-        print(f"❌ Error: {result['error']}")
+        print(f"[ERR] Error: {result['error']}")
         return False
 
 # 使用示例
@@ -203,9 +202,9 @@ for i, prompt in enumerate(prompts):
         with open(output_file, "wb") as f:
             f.write(img_data)
         
-        print(f"   ✓ Saved to {output_file} ({result['processing_time']:.1f}s)")
+        print(f"   [OK] Saved to {output_file} ({result['processing_time']:.1f}s)")
     else:
-        print(f"   ✗ Failed: {result['error']}")
+        print(f"   [FAIL] Failed: {result['error']}")
 ```
 
 ### 检查系统状态
@@ -226,7 +225,7 @@ def check_status():
 check_status()
 ```
 
-## 🌐 其他语言示例
+## 其他语言示例
 
 ### JavaScript / Node.js
 
@@ -247,10 +246,10 @@ async function generateImage(prompt) {
       const base64Data = response.data.images[0].replace(/^data:image\/\w+;base64,/, '');
       fs.writeFileSync('output.png', base64Data, 'base64');
       
-      console.log(`✅ Image generated in ${response.data.processing_time.toFixed(2)}s`);
+      console.log(`[OK] Image generated in ${response.data.processing_time.toFixed(2)}s`);
     }
   } catch (error) {
-    console.error('❌ Error:', error.message);
+    console.error('[ERR] Error:', error.message);
   }
 }
 
@@ -284,15 +283,15 @@ for i in "${!PROMPTS[@]}"; do
     
     if [ "$SUCCESS" = "true" ]; then
         echo $RESPONSE | jq -r '.images[0]' | sed 's/^data:image\/png;base64,//' | base64 -d > "$OUTPUT"
-        echo "✅ Saved to $OUTPUT"
+        echo "[OK] Saved to $OUTPUT"
     else
         ERROR=$(echo $RESPONSE | jq -r '.error')
-        echo "❌ Error: $ERROR"
+        echo "[ERR] Error: $ERROR"
     fi
 done
 ```
 
-## 🔧 高级配置
+## 高级配置
 
 ### 自定义参数
 
@@ -304,7 +303,7 @@ curl -X POST http://127.0.0.1:7866/api/generate \
     "prompt": "detailed portrait of a woman",
     "negative_prompt": "blurry, low quality",
     "style": "Fooocus Photograph",
-    "aspect_ratio": "896×1152",
+    "aspect_ratio": "896x1152",
     "steps": 40,
     "performance": "Quality",
     "seed": 42
@@ -324,24 +323,24 @@ try:
         raise Exception(result.get("error", "Unknown error"))
         
 except requests.exceptions.ConnectionError:
-    print("❌ Cannot connect to Fooocus API")
+    print("[ERR] Cannot connect to Fooocus API")
 except requests.exceptions.Timeout:
-    print("⏱️ Request timeout")
+    print("[TIMEOUT] Request timeout")
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"[ERR] Error: {e}")
 ```
 
-## 📊 与其他方案对比
+## 与其他方案对比
 
-| 特性 | Gradio Client | WebSocket | 本 REST API |
-|------|---------------|-----------|-------------|
-| 参数数量 | 152 个位置参数 | 复杂 JSON | **7 个关键字参数** |
-| 易用性 | 困难 | 中等 | **简单** |
-| 文档 | 无 | 无 | **Swagger 自动生成** |
-| 多语言支持 | 仅 Python | 任何语言 | **任何语言** |
-| 调试工具 | 无 | 需要 WS 客户端 | **curl、Postman** |
+| 特性       | Gradio Client  | WebSocket      | 本 REST API          |
+|------------|----------------|----------------|----------------------|
+| 参数数量   | 152 个位置参数 | 复杂 JSON      | **7 个关键字参数**   |
+| 易用性     | 困难           | 中等           | **简单**             |
+| 文档       | 无             | 无             | **Swagger 自动生成** |
+| 多语言支持 | 仅 Python      | 任何语言       | **任何语言**         |
+| 调试工具   | 无             | 需要 WS 客户端 | **curl、Postman**    |
 
-## 🔒 安全建议
+## 安全建议
 
 ### 生产环境部署
 
@@ -373,7 +372,7 @@ python entry_with_update.py --enable-api --api-host 127.0.0.1
 python entry_with_update.py --enable-api --api-host 192.168.1.100
 ```
 
-## 🐛 故障排除
+## 故障排除
 
 ### 问题：无法连接到 API
 
@@ -409,19 +408,15 @@ curl http://127.0.0.1:7866/api/health
 pip install fastapi uvicorn pydantic
 ```
 
-## 📝 更新日志
+## 更新日志
 
-### v1.0.0 (2024-01-15)
-- ✅ 初始版本
-- ✅ 实现 `/api/generate` 核心端点
-- ✅ 实现 `/api/health`, `/api/models`, `/api/styles`, `/api/status` 辅助端点
-- ✅ Swagger UI 自动文档
-- ✅ 异步任务队列管理
+### v1.0.0
+- [OK] 初始版本
+- [OK] 实现 `/api/generate` 核心端点
+- [OK] 实现 `/api/health`, `/api/models`, `/api/styles`, `/api/status` 辅助端点
+- [OK] Swagger UI 自动文档
+- [OK] 异步任务队列管理
 
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 📄 许可证
+## 许可证
 
 与原版 Fooocus 相同的许可证。

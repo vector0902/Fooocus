@@ -20,18 +20,18 @@ def test_health():
         data = response.json()
         
         if data.get("status") == "healthy":
-            print("✅ Health check passed")
+            print("[OK] Health check passed")
             return True
         else:
-            print(f"❌ Unexpected status: {data}")
+            print(f"[FAIL] Unexpected status: {data}")
             return False
             
     except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to API server")
+        print("[ERR] Cannot connect to API server")
         print("   Make sure Fooocus is running with --enable-api")
         return False
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[ERR] Error: {e}")
         return False
 
 
@@ -46,11 +46,11 @@ def test_status():
         print(f"   Status: {data.get('status')}")
         print(f"   Version: {data.get('version')}")
         print(f"   Uptime: {data.get('uptime', 0):.1f}s")
-        print("✅ Status endpoint working")
+        print("[OK] Status endpoint working")
         return True
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[ERR] Error: {e}")
         return False
 
 
@@ -71,11 +71,11 @@ def test_models():
         if len(models) > 5:
             print(f"     ... and {len(models) - 5} more")
         
-        print("✅ Models endpoint working")
+        print("[OK] Models endpoint working")
         return True
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[ERR] Error: {e}")
         return False
 
 
@@ -117,25 +117,25 @@ def test_generate():
                 with open(output_file, "wb") as f:
                     f.write(img_data)
                 
-                print(f"\n   ✅ Image generated successfully!")
+                print(f"\n   [OK] Image generated successfully!")
                 print(f"      Saved to: {output_file}")
                 print(f"      Size: {len(img_data) / 1024:.1f} KB")
                 print(f"      Time: {result['processing_time']:.2f}s")
                 print(f"      Seed: {result['metadata'].get('seed', 'N/A')}")
                 return True
             else:
-                print("\n⚠️  Generation succeeded but no images returned")
+                print("\n[WARN] Generation succeeded but no images returned")
                 return False
         else:
             error = result.get("error", "Unknown error")
-            print(f"\n❌ Generation failed: {error}")
+            print(f"\n[FAIL] Generation failed: {error}")
             return False
             
     except requests.exceptions.Timeout:
-        print("\n❌ Request timed out (generation took too long)")
+        print("\n[TIMEOUT] Request timed out (generation took too long)")
         return False
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n[ERR] Error: {e}")
         return False
 
 
@@ -154,7 +154,7 @@ def main():
     if all(r[1] for r in results):
         results.append(("Generate Image", test_generate()))
     else:
-        print("\n⚠️  Skipping generation test (previous tests failed)")
+        print("\n[WARN] Skipping generation test (previous tests failed)")
         results.append(("Generate Image", None))
     
     # Summary
@@ -164,11 +164,11 @@ def main():
     
     for name, result in results:
         if result is True:
-            status = "✅ PASS"
+            status = "[OK] PASS"
         elif result is False:
-            status = "❌ FAIL"
+            status = "[FAIL]"
         else:
-            status = "⏭️  SKIP"
+            status = "[SKIP]"
         
         print(f"  {name:<20} {status}")
     
@@ -178,10 +178,10 @@ def main():
     print(f"\nTotal: {total_passed}/{total_run} tests passed")
     
     if total_passed == total_run:
-        print("\n🎉 All tests passed! API is working correctly.")
+        print("\n[DONE] All tests passed! API is working correctly.")
         return 0
     else:
-        print("\n⚠️  Some tests failed. Check the errors above.")
+        print("\n[WARN] Some tests failed. Check the errors above.")
         return 1
 
 
