@@ -427,7 +427,10 @@ def build_args_from_request(request: GenerateRequest) -> list:
         args.append(request.negative_prompt or "")
         args.append([request.style])
         args.append(request.performance)
-        args.append(request.aspect_ratio)
+        
+        # Convert aspect_ratio format: "1024*1024" (API input) -> "1024×1024" (Handler expects Unicode ×)
+        aspect_ratio_for_handler = request.aspect_ratio.replace('*', '\u00d7')
+        args.append(aspect_ratio_for_handler)
         args.append(1)  # image_number
         args.append(request.output_format)
         args.append(str(request.seed))
