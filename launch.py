@@ -149,9 +149,7 @@ config.default_base_model_name, config.checkpoint_downloads = download_models(
 config.update_files()
 init_cache(config.model_filenames, config.paths_checkpoints, config.lora_filenames, config.paths_loras)
 
-from webui import *
-
-# Start REST API server if enabled
+# Start REST API server BEFORE WebUI (to ensure it's ready first)
 if hasattr(args, 'enable_api') and args.enable_api:
     api_host = getattr(args, 'api_host', '127.0.0.1')
     api_port = getattr(args, 'api_port', 7866)
@@ -163,6 +161,7 @@ if hasattr(args, 'enable_api') and args.enable_api:
     
     def start_api():
         try:
+            print(f'[API] REST API server running on {api_host}:{api_port}')
             uvicorn.run(
                 app,
                 host=api_host,
@@ -171,8 +170,15 @@ if hasattr(args, 'enable_api') and args.enable_api:
             )
         except Exception as e:
             print(f'[API] Failed to start: {e}')
+            import traceback
+            traceback.print_exc()
     
     api_thread = threading.Thread(target=start_api, daemon=True)
     api_thread.start()
+    import time
+    time.sleep(1)  # Give API thread a moment to start
     print('[API] REST API started in background thread')
-    print(f'[API] API endpoints available at http://{api_host}:{api_port}/docs')
+    print(f'[API] Swagger docs: http://{api_host}:{api_port}/docs')
+    print(f'[API] Health check: http://{api_host}:{api_port}/api/health')
+
+from webui import *
