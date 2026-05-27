@@ -500,19 +500,29 @@ async def generate_image(request: GenerateRequest):
     
     This endpoint provides a simplified interface compared to the full Gradio API.
     Only essential parameters are required; others use sensible defaults.
+    Supports task queuing - if a task is running, new tasks will wait in queue.
     """
-    global current_task
+    start_time = time.time()
     
-    async with task_lock:
-        if current_task:
-            raise HTTPException(status_code=409, detail="Another task is already running")
-        
-        task_id = f"{int(time.time())}"
-        current_task = f"generate:{request.prompt[:50]}"
+    # Create a future to wait for task completion
+    task_future = asyncio.Future()
+    
+    async with queue_lock:
+        pending_futures.append(task_future)
+        queue_position = len(pending_futures)
+    
+    # Wait for all previous tasks to complete (FIFO queue)
+    if queue_position > 1:
+        print(f'[API] Task queued at position {queue_position}, waiting...')
+        try:
+            await asyncio.wait_for(pending_futures[queue_position - 2], timeout=600)
+        except asyncio.TimeoutError:
+            async with queue_lock:
+                if task_future in pending_futures:
+                    pending_futures.remove(task_future)
+            raise HTTPException(status_code=504, detail="Timeout waiting in queue")
     
     try:
-        start_time = time.time()
-        
         result = await call_fooocus_generate(request)
         
         processing_time = time.time() - start_time
@@ -538,7 +548,12 @@ async def generate_image(request: GenerateRequest):
         )
     
     finally:
-        current_task = None
+        # Mark this task as complete and remove from queue
+        if not task_future.done():
+            task_future.set_result(True)
+        async with queue_lock:
+            if task_future in pending_futures:
+                pending_futures.remove(task_future)
 
 
 # Compatibility endpoint for test_local_model.py
@@ -554,23 +569,39 @@ class FooocusCompatRequest(BaseModel):
     steps: int = Field(20)
 
 
+# Task queue management for concurrent requests
+pending_futures: List[asyncio.Future] = []
+queue_lock = asyncio.Lock()
+
+
 @app.post("/v1/generation/text-to-image")
 async def generate_text_to_image_compat(request: FooocusCompatRequest):
     """
     Compatibility endpoint for test_local_model.py
     Converts FooocusTester format to internal format and generates image.
+    Supports task queuing - if a task is running, new tasks will wait in queue.
     """
-    global current_task
+    start_time = time.time()
     
-    async with task_lock:
-        if current_task:
-            raise HTTPException(status_code=409, detail="Another task is already running")
-        
-        current_task = f"generate:{request.prompt[:50]}"
+    # Create a future to wait for task completion
+    task_future = asyncio.Future()
+    
+    async with queue_lock:
+        pending_futures.append(task_future)
+        queue_position = len(pending_futures)
+    
+    # Wait for all previous tasks to complete (FIFO queue)
+    if queue_position > 1:
+        print(f'[API] Task queued at position {queue_position}, waiting...')
+        try:
+            await asyncio.wait_for(pending_futures[queue_position - 2], timeout=600)
+        except asyncio.TimeoutError:
+            async with queue_lock:
+                if task_future in pending_futures:
+                    pending_futures.remove(task_future)
+            raise HTTPException(status_code=504, detail="Timeout waiting in queue")
     
     try:
-        start_time = time.time()
-        
         # Convert to internal format
         internal_request = GenerateRequest(
             prompt=request.prompt,
@@ -593,15 +624,21 @@ async def generate_text_to_image_compat(request: FooocusCompatRequest):
         }
     
     except Exception as e:
+        processing_time = time.time() - start_time
         return {
             "images": [],
             "success": False,
             "error": str(e),
-            "processing_time": time.time() - start_time
+            "processing_time": processing_time
         }
     
     finally:
-        current_task = None
+        # Mark this task as complete and remove from queue
+        if not task_future.done():
+            task_future.set_result(True)
+        async with queue_lock:
+            if task_future in pending_futures:
+                pending_futures.remove(task_future)
 
 
 async def call_fooocus_generate(request: GenerateRequest) -> Dict[str, Any]:
