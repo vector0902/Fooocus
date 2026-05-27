@@ -300,7 +300,7 @@ def build_args_from_request(request: GenerateRequest) -> list:
         args.append("None")  # refiner_sdxl_or_sd_15
         args.append(0.8)  # refiner_switch_at
         
-        for _ in range(5):  # 5 LoRA slots
+        for _ in range(config.default_max_lora_number):
             args.append(False)  # enable
             args.append("None")  # name
             args.append(0.0)  # weight
@@ -361,7 +361,7 @@ def build_args_from_request(request: GenerateRequest) -> list:
         args.append(False)  # save_metadata_to_images
         args.append("fooocus")  # metadata_scheme
         
-        for _ in range(16):  # 16 image prompts
+        for _ in range(config.default_controlnet_image_count):
             args.append(None)  # image
             args.append(0.5)  # stop_at
             args.append(1.0)  # weight
@@ -376,7 +376,7 @@ def build_args_from_request(request: GenerateRequest) -> list:
         args.append("")  # enhance_order_of_processing
         args.append("")  # enhance_prompt
         
-        for _ in range(4):  # 4 enhance inputs
+        for _ in range(config.default_enhance_tabs):
             args.append(False)  # enable
             args.append("")  # detection_prompt
             args.append("")  # enhancement_positive_prompt
