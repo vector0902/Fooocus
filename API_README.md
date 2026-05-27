@@ -92,7 +92,7 @@ curl -X POST http://127.0.0.1:7866/api/generate \
     "prompt": "a red apple on a wooden table",
     "negative_prompt": "",
     "style": "Fooocus V2",
-    "aspect_ratio": "1024x1024",
+    "aspect_ratio": "1024*1024",
     "steps": 20,
     "seed": -1,
     "performance": "Speed"
@@ -122,7 +122,7 @@ curl -X POST http://127.0.0.1:7866/api/generate \
 | `prompt`          | string  | [REQ]| -            | 正向提示词                   |
 | `negative_prompt` | string  |      | ""           | 负向提示词                   |
 | `style`           | string  |      | "Fooocus V2" | 样式名称                     |
-| `aspect_ratio`    | string  |      | "1024x1024"  | 宽高比（使用 x 符号）        |
+| `aspect_ratio`    | string  |      | "1024*1024"  | 分辨率格式 WIDTH*HEIGHT        |
 | `steps`           | integer |      | 20           | 生成步数 (1-200)             |
 | `seed`            | integer |      | -1           | 随机种子 (-1 为随机)         |
 | `performance`     | string  |      | "Speed"      | 性能模式 ("Speed"/"Quality") |
@@ -303,7 +303,7 @@ curl -X POST http://127.0.0.1:7866/api/generate \
     "prompt": "detailed portrait of a woman",
     "negative_prompt": "blurry, low quality",
     "style": "Fooocus Photograph",
-    "aspect_ratio": "896x1152",
+    "aspect_ratio": "896*1152",
     "steps": 40,
     "performance": "Quality",
     "seed": 42
