@@ -61,6 +61,7 @@ class GenerateRequest(BaseModel):
     seed: int = Field(-1, description="Random seed (-1 for random)")
     performance: str = Field("Speed", enum=["Speed", "Quality"], description="Performance mode")
     output_format: str = Field("png", enum=["png", "jpg"], description="Output format")
+    base_model_name: Optional[str] = Field(None, description="Base model name to use")
 
 
 class GenerateResponse(BaseModel):
@@ -567,6 +568,7 @@ class FooocusCompatRequest(BaseModel):
     image_number: int = Field(1)
     image_seed: int = Field(-1)
     steps: int = Field(20)
+    base_model_name: Optional[str] = Field(None, description="Base model name to use")
 
 
 # Task queue management for concurrent requests
@@ -610,7 +612,8 @@ async def generate_text_to_image_compat(request: FooocusCompatRequest):
             aspect_ratio=request.aspect_ratios_selection,
             steps=request.steps,
             seed=request.image_seed,
-            performance=request.performance_selection
+            performance=request.performance_selection,
+            base_model_name=request.base_model_name
         )
         
         result = await call_fooocus_generate(internal_request)
@@ -691,7 +694,7 @@ def build_args_from_request(request: GenerateRequest) -> list:
         args.append(False)  # read_wildcards_in_order
         args.append(2.0)  # sharpness
         args.append(7.0)  # cfg_scale
-        args.append(config.default_base_model_name if hasattr(config, 'default_base_model_name') else "juggernautXL_v8Rundiffusion.safetensors")
+        args.append(request.base_model_name if request.base_model_name else (config.default_base_model_name if hasattr(config, 'default_base_model_name') else "juggernautXL_v8Rundiffusion.safetensors"))
         args.append("None")  # refiner_sdxl_or_sd_15
         args.append(0.8)  # refiner_switch_at
         
