@@ -18,6 +18,8 @@ from datetime import datetime
 try:
     from fastapi import FastAPI, HTTPException, BackgroundTasks
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+    from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel, Field
     import uvicorn
 except ImportError:
@@ -41,6 +43,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# File browser configuration
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure output directory exists
+
+# Mount static files for direct file access (e.g., /files/output/image.png)
+app.mount("/files", StaticFiles(directory=str(OUTPUT_DIR)), name="files")
 
 
 class GenerateRequest(BaseModel):
@@ -97,6 +106,24 @@ def get_initial_start_time() -> float:
 # Optional: Set max session duration (in seconds) for temporary instances
 # Set to 0 or None to disable countdown
 MAX_SESSION_DURATION = 600  # 10 minutes (adjust based on your Cloud Studio limit)
+
+
+@app.get("/")
+async def root():
+    """Root endpoint - returns basic API info"""
+    return {
+        "name": "Fooocus REST API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/api/health",
+            "generate": "/api/generate",
+            "compat": "/v1/generation/text-to-image",
+            "files": "/api/files",
+            "browser": "/api/browser"
+        },
+        "docs": "/docs"
+    }
 
 
 @app.get("/api/health")
@@ -274,6 +301,196 @@ async def get_system_uptime():
         response_data["resource_error"] = str(e)
     
     return response_data
+
+
+@app.get("/api/files")
+async def list_files(path: str = ""):
+    """
+    List files in output directory.
+    
+    Provides directory browsing similar to `python -m http.server`.
+    Usage:
+      GET /api/files              - List root of output directory
+      GET /api/files?path=subdir  - List specific subdirectory
+    """
+    try:
+        # Security: prevent path traversal attacks
+        safe_path = Path(path)
+        if safe_path.is_absolute() or ".." in str(safe_path):
+            raise HTTPException(status_code=400, detail="Invalid path")
+        
+        target_dir = OUTPUT_DIR / safe_path
+        
+        # Validate path exists and is directory
+        if not target_dir.exists():
+            raise HTTPException(status_code=404, detail="Directory not found")
+        
+        if not target_dir.is_dir():
+            raise HTTPException(status_code=400, detail="Path is not a directory")
+        
+        # List contents
+        items = []
+        for item in sorted(target_dir.iterdir()):
+            item_info = {
+                "name": item.name,
+                "type": "directory" if item.is_dir() else "file",
+                "size": item.stat().st_size if item.is_file() else None,
+                "modified": datetime.fromtimestamp(item.stat().st_mtime).isoformat(),
+                "url": f"/files/{item.relative_to(OUTPUT_DIR)}" if item.is_file() else None
+            }
+            
+            if item.is_dir():
+                item_info["url"] = f"/api/files?path={item.relative_to(OUTPUT_DIR)}"
+            
+            items.append(item_info)
+        
+        # Calculate parent link
+        parent_path = None
+        if path:
+            parent = Path(path).parent
+            parent_path = f"/api/files?path={parent}" if str(parent) != "." else "/api/files"
+        
+        return {
+            "path": str(target_dir),
+            "parent": parent_path,
+            "items": items,
+            "total_files": len([i for i in items if i["type"] == "file"]),
+            "total_dirs": len([i for i in items if i["type"] == "directory"]),
+            "total_size": sum(i.get("size", 0) or 0 for i in items if i["type"] == "file")
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
+
+
+@app.get("/api/browser")
+async def file_browser_html():
+    """
+    Simple HTML interface for browsing output files.
+    Access at: http://host:port/api/browser
+    """
+    html_content = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fooocus Output Browser</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; background: #f5f5f5; }
+        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .breadcrumb { margin: 15px 0; font-size: 14px; }
+        .breadcrumb a { color: #007bff; text-decoration: none; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        th { background: #007bff; color: white; padding: 12px; text-align: left; cursor: pointer; }
+        td { padding: 10px; border-bottom: 1px solid #eee; }
+        tr:hover { background: #f8f9fa; }
+        .icon { font-size: 20px; margin-right: 8px; }
+        .file-link { color: #333; text-decoration: none; display: flex; align-items: center; }
+        .file-link:hover { color: #007bff; }
+        .size { color: #666; font-size: 13px; }
+        .modified { color: #999; font-size: 13px; }
+        .nav-btn { padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        .nav-btn:hover { background: #0056b3; }
+        .info { margin: 10px 0; color: #666; font-size: 13px; }
+        .loading { text-align: center; padding: 40px; color: #999; }
+        .error { color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 4px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Fooocus Output Browser</h1>
+    <div id="app">
+        <div class="loading">Loading...</div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/files';
+        let currentPath = '';
+        
+        async function loadDirectory(path) {
+            currentPath = path;
+            const url = path ? `${API_BASE}?path=${encodeURIComponent(path)}` : API_BASE;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    document.getElementById('app').innerHTML = `<div class="error">Error: ${data.detail}</div>`;
+                    return;
+                }
+                
+                renderFileList(data);
+            } catch (error) {
+                document.getElementById('app').innerHTML = `<div class="error">Failed to load: ${error.message}</div>`;
+            }
+        }
+        
+        function renderFileList(data) {
+            const app = document.getElementById('app');
+            
+            // Breadcrumb navigation
+            let breadcrumb = '<div class="breadcrumb">';
+            if (data.parent) {
+                breadcrumb += `<a href="#" onclick="loadDirectory('${currentPath.includes('/') ? currentPath.substring(0, currentPath.lastIndexOf('/')) : ''}'); return false;">[Parent Directory]</a> / `;
+            }
+            breadcrumb += `<strong>${data.path}</strong></div>`;
+            
+            // File table
+            let rows = data.items.map(item => `
+                <tr>
+                    <td>
+                        <a href="${item.url}" class="file-link" ${item.type === 'file' ? 'target="_blank"' : `onclick="loadDirectory('${item.url.replace('/api/files?path=', '')}'); return false;"`}>
+                            <span class="icon">${item.type === 'directory' ? '&#128193;' : '&#128196;'}</span>
+                            ${item.name}
+                        </a>
+                    </td>
+                    <td class="size">${item.type === 'file' ? formatSize(item.size) : '-'}</td>
+                    <td class="modified">${formatDate(item.modified)}</td>
+                </tr>
+            `).join('');
+            
+            // Info bar
+            const info = `
+                <div class="info">
+                    ${data.total_files} files, ${data.total_dirs} directories | 
+                    Total size: ${formatSize(data.total_size)}
+                </div>
+            `;
+            
+            app.innerHTML = `
+                ${breadcrumb}
+                ${info}
+                <table>
+                    <thead>
+                        <tr><th>Name</th><th>Size</th><th>Modified</th></tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+        }
+        
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleString();
+        }
+        
+        // Load root directory on page load
+        loadDirectory('');
+    </script>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html_content)
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
