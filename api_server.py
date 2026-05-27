@@ -186,6 +186,69 @@ async def generate_image(request: GenerateRequest):
         current_task = None
 
 
+# Compatibility endpoint for test_local_model.py
+class FooocusCompatRequest(BaseModel):
+    """Request model compatible with test_local_model.py FooocusTester"""
+    prompt: str = Field(..., min_length=1)
+    negative_prompt: str = Field("")
+    style_selections: List[str] = Field(default=["Fooocus V2"])
+    performance_selection: str = Field("Speed")
+    aspect_ratios_selection: str = Field("1024x1024")
+    image_number: int = Field(1)
+    image_seed: int = Field(-1)
+    steps: int = Field(20)
+
+
+@app.post("/v1/generation/text-to-image")
+async def generate_text_to_image_compat(request: FooocusCompatRequest):
+    """
+    Compatibility endpoint for test_local_model.py
+    Converts FooocusTester format to internal format and generates image.
+    """
+    global current_task
+    
+    async with task_lock:
+        if current_task:
+            raise HTTPException(status_code=409, detail="Another task is already running")
+        
+        current_task = f"generate:{request.prompt[:50]}"
+    
+    try:
+        start_time = time.time()
+        
+        # Convert to internal format
+        internal_request = GenerateRequest(
+            prompt=request.prompt,
+            negative_prompt=request.negative_prompt,
+            style=request.style_selections[0] if request.style_selections else "Fooocus V2",
+            aspect_ratio=request.aspect_ratios_selection,
+            steps=request.steps,
+            seed=request.image_seed,
+            performance=request.performance_selection
+        )
+        
+        result = await call_fooocus_generate(internal_request)
+        processing_time = time.time() - start_time
+        
+        # Return format expected by FooocusTester
+        return {
+            "images": result.get("images", []),
+            "success": True,
+            "processing_time": processing_time
+        }
+    
+    except Exception as e:
+        return {
+            "images": [],
+            "success": False,
+            "error": str(e),
+            "processing_time": time.time() - start_time
+        }
+    
+    finally:
+        current_task = None
+
+
 async def call_fooocus_generate(request: GenerateRequest) -> Dict[str, Any]:
     """Internal function to call Fooocus generation pipeline."""
     try:
@@ -338,30 +401,31 @@ def build_args_from_request(request: GenerateRequest) -> list:
 
 
 async def run_generation_in_thread(async_task) -> List[str]:
-    """Run Fooocus generation in a separate thread."""
+    """Run Fooocus generation by adding to async task queue and waiting for completion."""
     import modules.async_worker as worker
     
-    loop = asyncio.get_event_loop()
+    # Add task to the global queue (worker thread will pick it up)
+    worker.async_tasks.append(async_task)
     
-    def sync_generate():
-        results = []
-        
-        def callback(images, seed, **kwargs):
-            results.extend(images)
-        
-        worker.process_task(
-            all_steps=[async_task.steps],
-            async_task=async_task,
-            callback=callback,
-            controlnet_canny_path=None,
-            controlnet_cpds_path=None,
-            current_task_id=0
-        )
-        
-        return results
+    # Wait for task to complete
+    max_wait_time = 300  # 5 minutes max
+    start_time = time.time()
     
-    results = await loop.run_in_executor(None, sync_generate)
-    return results
+    while time.time() - start_time < max_wait_time:
+        # Check if task has finished (worker appends ['finish', results] to yields)
+        if len(async_task.yields) > 0:
+            last_yield = async_task.yields[-1]
+            if isinstance(last_yield, list) and len(last_yield) > 0:
+                if last_yield[0] == 'finish':
+                    # Task completed, return results
+                    return async_task.results
+        
+        # Small delay to avoid busy waiting
+        await asyncio.sleep(0.1)
+    
+    # Timeout - return whatever results we have so far
+    print(f'[API] Warning: Generation timed out after {max_wait_time}s')
+    return async_task.results
 
 
 def get_fooocus_version() -> str:
