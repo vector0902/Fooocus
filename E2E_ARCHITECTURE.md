@@ -54,14 +54,14 @@
 
 **主要端点**:
 
-| 端点 | 方法 | 功能 |
-|------|------|------|
-| `/` | GET | API 信息（健康检查） |
-| `/api/health` | GET | 健康检查 |
-| `/api/uptime` | GET | 运行时间和资源信息 |
-| `/api/generate` | POST | 图像生成（标准格式） |
-| `/v1/generation/text-to-image` | POST | 图像生成（兼容格式） |
-| `/files` | GET | 静态文件服务（output 目录） |
+| 端点                           | 方法 | 功能                        |
+|--------------------------------|------|-----------------------------|
+| `/`                            | GET  | API 信息（健康检查）        |
+| `/api/health`                  | GET  | 健康检查                    |
+| `/api/uptime`                  | GET  | 运行时间和资源信息          |
+| `/api/generate`                | POST | 图像生成（标准格式）        |
+| `/v1/generation/text-to-image` | POST | 图像生成（兼容格式）        |
+| `/files`                       | GET  | 静态文件服务（output 目录） |
 
 ### 3.2 async_worker.py - 原生任务处理
 
@@ -236,19 +236,19 @@ API 返回 ("data:image/png;base64,...")
 
 ### 6.1 为什么选择独立文件而非修改源码？
 
-| 方案 | 优点 | 缺点 |
-|------|------|------|
+| 方案                         | 优点                       | 缺点             |
+|------------------------------|----------------------------|------------------|
 | **独立文件 (api_server.py)** | 易于维护、可回滚、最小侵入 | 需要额外启动代码 |
-| 修改 async_worker.py | 直接集成 | 难以升级、风险高 |
+| 修改 async_worker.py         | 直接集成                   | 难以升级、风险高 |
 
 **决策**: 选择独立文件方案
 
 ### 6.2 为什么使用 asyncio.Future 而不是简单锁？
 
-| 方案 | 特点 |
-|------|------|
+| 方案               | 特点                        |
+|--------------------|-----------------------------|
 | 全局锁 (task_lock) | 返回 409 错误，客户端需重试 |
-| **asyncio.Future** | 客户端透明等待，自动排队 |
+| **asyncio.Future** | 客户端透明等待，自动排队    |
 
 **决策**: 使用 Future 实现真正的队列语义
 
@@ -373,13 +373,13 @@ Summary: 12/12 successful
 
 ### 9.1 常见错误
 
-| 错误 | 原因 | 解决方案 |
-|------|------|---------|
-| `404 Not Found` | API 未启动或 URL 错误 | 检查 `--enable-api` 参数 |
-| `409 Conflict` | 旧版本无队列支持 | 更新 api_server.py 并重启 |
-| `Incorrect padding` | Base64 解码失败 | 更新 test_local_model.py 处理 data URI |
-| `504 Timeout` | 队列等待超时 | 减少任务数或增加超时时间 |
-| `Connection refused` | 实例未就绪 | 等待启动完成或检查日志 |
+| 错误                 | 原因                  | 解决方案                               |
+|----------------------|-----------------------|----------------------------------------|
+| `404 Not Found`      | API 未启动或 URL 错误 | 检查 `--enable-api` 参数               |
+| `409 Conflict`       | 旧版本无队列支持      | 更新 api_server.py 并重启              |
+| `Incorrect padding`  | Base64 解码失败       | 更新 test_local_model.py 处理 data URI |
+| `504 Timeout`        | 队列等待超时          | 减少任务数或增加超时时间               |
+| `Connection refused` | 实例未就绪            | 等待启动完成或检查日志                 |
 
 ### 9.2 调试技巧
 
@@ -423,23 +423,23 @@ curl https://<instance-url>/files/
 
 ## 附录 A: 文件清单
 
-| 文件 | 用途 |
-|------|------|
-| `fooocus/myfork/api_server.py` | REST API 服务主文件 |
-| `fooocus/myfork/args_manager.py` | CLI 参数定义（添加了 --enable-api 等） |
-| `fooocus/myfork/launch.py` | 启动逻辑（集成 API 服务） |
-| `text2image-tester/local_model/test_local_model.py` | 测试客户端 |
-| `text2image-tester/local_model/fooocus1.sh` | Fooocus 测试脚本 |
-| `text2image-tester/shared/prompts_default.json` | 测试提示词数据 |
+| 文件                                                | 用途                                   |
+|-----------------------------------------------------|----------------------------------------|
+| `fooocus/myfork/api_server.py`                      | REST API 服务主文件                    |
+| `fooocus/myfork/args_manager.py`                    | CLI 参数定义（添加了 --enable-api 等） |
+| `fooocus/myfork/launch.py`                          | 启动逻辑（集成 API 服务）              |
+| `text2image-tester/local_model/test_local_model.py` | 测试客户端                             |
+| `text2image-tester/local_model/fooocus1.sh`         | Fooocus 测试脚本                       |
+| `text2image-tester/shared/prompts_default.json`     | 测试提示词数据                         |
 
 ---
 
 ## 附录 B: 版本历史
 
-| 版本 | 日期 | 变更 |
-|------|------|------|
-| v1.0 | 2026-05-27 | 初始版本：基础 API + 任务队列 |
-| v1.1 | 2026-05-27 | 添加 /api/uptime、静态文件服务 |
+| 版本 | 日期       | 变更                                 |
+|------|------------|--------------------------------------|
+| v1.0 | 2026-05-27 | 初始版本：基础 API + 任务队列        |
+| v1.1 | 2026-05-27 | 添加 /api/uptime、静态文件服务       |
 | v1.2 | 2026-05-27 | 实现 FIFO 任务队列、修复 base64 解码 |
 
 ---
