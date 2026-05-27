@@ -604,6 +604,12 @@ async def generate_text_to_image_compat(request: FooocusCompatRequest):
             raise HTTPException(status_code=504, detail="Timeout waiting in queue")
     
     try:
+        import json
+        # Log incoming request parameters (pretty print)
+        print(f'[API] ====== Received Text-to-Image Request ======')
+        print(json.dumps(request.model_dump(), indent=2, ensure_ascii=False))
+        print(f'[API] ===========================================')
+        
         # Convert to internal format
         internal_request = GenerateRequest(
             prompt=request.prompt,
@@ -679,6 +685,9 @@ def build_args_from_request(request: GenerateRequest) -> list:
         
         args = []
         
+        # Determine the actual model name to use
+        actual_base_model = request.base_model_name if request.base_model_name else (config.default_base_model_name if hasattr(config, 'default_base_model_name') else "juggernautXL_v8Rundiffusion.safetensors")
+        
         args.append(False)  # generate_image_grid_for_each_batch
         args.append(request.prompt)
         args.append(request.negative_prompt or "")
@@ -694,7 +703,12 @@ def build_args_from_request(request: GenerateRequest) -> list:
         args.append(False)  # read_wildcards_in_order
         args.append(2.0)  # sharpness
         args.append(7.0)  # cfg_scale
-        args.append(request.base_model_name if request.base_model_name else (config.default_base_model_name if hasattr(config, 'default_base_model_name') else "juggernautXL_v8Rundiffusion.safetensors"))
+        args.append(actual_base_model)
+        
+        # Log the complete args list (pretty print)
+        print(f'[API] ====== Fooocus Generation Args ======')
+        print(json.dumps(args, indent=2, ensure_ascii=False, default=str))
+        print(f'[API] ======================================')
         args.append("None")  # refiner_sdxl_or_sd_15
         args.append(0.8)  # refiner_switch_at
         
