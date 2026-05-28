@@ -88,21 +88,29 @@ start_time = time.time()  # Fooocus/API instance start time
 current_task: Optional[str] = None
 task_lock = asyncio.Lock()
 
-UPTIME_FILE = "/tmp/uptime.fcs"
 
-def init_uptime_file():
-    """Initialize uptime tracking file - preserves initial start time across restarts"""
-    if not os.path.exists(UPTIME_FILE):
-        Path(UPTIME_FILE).touch()
-
-init_uptime_file()
-
-def get_initial_start_time() -> float:
-    """Get the initial start time from the uptime file"""
+def get_system_uptime() -> float:
+    """Get system uptime in seconds using system command"""
     try:
-        return os.path.getmtime(UPTIME_FILE)
+        import subprocess
+        result = subprocess.run(['cat', '/proc/uptime'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            uptime_seconds = float(result.stdout.split()[0])
+            return uptime_seconds
+    except Exception as e:
+        print(f"Failed to get system uptime: {e}")
+    
+    # Fallback: use time since boot from /proc/stat
+    try:
+        with open('/proc/stat', 'r') as f:
+            for line in f:
+                if line.startswith('btime'):
+                    boot_time = float(line.split()[1])
+                    return time.time() - boot_time
     except:
-        return time.time()
+        pass
+    
+    return 0.0
 
 # Optional: Set max session duration (in seconds) for temporary instances
 # Set to 0 or None to disable countdown
@@ -178,12 +186,12 @@ async def list_styles():
 @app.get("/api/status")
 async def get_status():
     """Get system status"""
-    global current_task
+    global current_task, start_time
     
     return StatusResponse(
         status="running" if current_task else "idle",
         version=get_fooocus_version(),
-        uptime=time.time() - get_initial_start_time(),
+        uptime=time.time() - start_time,  # Fooocus instance uptime
         current_task=current_task
     )
 
@@ -191,117 +199,54 @@ async def get_status():
 @app.get("/api/uptime")
 async def get_system_uptime():
     """
-    Get Fooocus instance uptime and system resource usage.
+    Get system uptime using system's uptime command.
     
-    PRIMARY: Returns accurate Fooocus instance/container uptime (time since API started)
-    SECONDARY: System resource information (CPU, memory, disk, etc.)
-    
-    This is different from system 'uptime' command - it shows how long the 
-    Fooocus service has been running, which is critical for temporary instances.
+    Returns system uptime information similar to running 'uptime' command.
     """
-    global start_time
+    import subprocess
     
-    initial_start = get_initial_start_time()
-    
-    # Calculate Fooocus instance uptime (the main metric you need)
-    # Uses persisted file timestamp to survive restarts
-    instance_uptime_seconds = time.time() - initial_start
-    
-    # Convert to human-readable format
-    days = int(instance_uptime_seconds // 86400)
-    hours = int((instance_uptime_seconds % 86400) // 3600)
-    minutes = int((instance_uptime_seconds % 3600) // 60)
-    seconds = int(instance_uptime_seconds % 60)
-    
-    instance_uptime_human = f"{days}d {hours}h {minutes}m {seconds}s"
-    
-    # Session countdown for temporary instances
-    session_info = None
-    if MAX_SESSION_DURATION and MAX_SESSION_DURATION > 0:
-        remaining_seconds = max(0, MAX_SESSION_DURATION - instance_uptime_seconds)
-        remaining_minutes = int(remaining_seconds // 60)
-        remaining_secs = int(remaining_seconds % 60)
-        
-        session_info = {
-            "max_duration_seconds": MAX_SESSION_DURATION,
-            "max_duration_human": f"{MAX_SESSION_DURATION // 60}m {MAX_SESSION_DURATION % 60}s",
-            "elapsed_seconds": round(instance_uptime_seconds, 1),
-            "elapsed_human": instance_uptime_human,
-            "remaining_seconds": round(remaining_seconds, 1),
-            "remaining_human": f"{remaining_minutes}m {remaining_secs}s",
-            "usage_percent": round((instance_uptime_seconds / MAX_SESSION_DURATION) * 100, 1),
-            "is_expiring_soon": remaining_seconds < 60,
-            "expired": remaining_seconds <= 0
-        }
-    
-    # Build response with instance uptime as primary info
-    response_data = {
-        "status": "ok",
-        "timestamp": datetime.now().isoformat(),
-        "instance": {
-            "uptime_seconds": round(instance_uptime_seconds, 1),
-            "uptime_human": instance_uptime_human,
-            "start_time": datetime.fromtimestamp(initial_start).isoformat(),
-            "pid": os.getpid()
-        }
-    }
-    
-    # Add session countdown if configured
-    if session_info:
-        response_data["session"] = session_info
-    
-    # Try to get additional system resources using psutil
+    # Get system uptime from /proc/uptime (most reliable on Linux)
     try:
-        import psutil
-        
-        # CPU usage (quick check, no interval for speed)
-        cpu_percent = psutil.cpu_percent(interval=0.1)
-        
-        # Memory
-        mem = psutil.virtual_memory()
-        memory_info = {
-            "total_gb": round(mem.total / (1024**3), 2),
-            "used_gb": round(mem.used / (1024**3), 2),
-            "percent": mem.percent
-        }
-        
-        # Current process resource usage
-        process = psutil.Process(os.getpid())
-        process_info = {
-            "memory_mb": round(process.memory_info().rss / (1024**2), 2),
-            "cpu_percent": process.cpu_percent(interval=0.1),
-            "num_threads": process.num_threads()
-        }
-        
-        response_data["resources"] = {
-            "cpu_percent": cpu_percent,
-            "memory": memory_info,
-            "process": process_info
-        }
-        
-        # GPU info if available (optional)
-        try:
-            import GPUtil
-            gpus = GPUtil.getGPUs()
-            if gpus:
-                gpu = gpus[0]
-                response_data["gpu"] = {
-                    "name": gpu.name,
-                    "memory_used_mb": int(gpu.memoryUsed),
-                    "memory_total_mb": int(gpu.memoryTotal),
-                    "load": f"{gpu.load*100:.1f}%"
-                }
-        except:
-            pass
+        result = subprocess.run(['cat', '/proc/uptime'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            uptime_seconds = float(result.stdout.split()[0])
             
-    except ImportError:
-        # psutil not available - just return basic instance uptime
-        response_data["note"] = "psutil not installed - showing minimal info"
-    
+            # Convert to human-readable format
+            days = int(uptime_seconds // 86400)
+            hours = int((uptime_seconds % 86400) // 3600)
+            minutes = int((uptime_seconds % 3600) // 60)
+            seconds = int(uptime_seconds % 60)
+            
+            uptime_human = f"{days}d {hours}h {minutes}m {seconds}s"
+            
+            return {
+                "status": "ok",
+                "timestamp": datetime.now().isoformat(),
+                "system": {
+                    "uptime_seconds": round(uptime_seconds, 1),
+                    "uptime_human": uptime_human,
+                    "boot_time": datetime.fromtimestamp(time.time() - uptime_seconds).isoformat()
+                }
+            }
     except Exception as e:
-        response_data["resource_error"] = str(e)
+        pass
     
-    return response_data
+    # Fallback: try uptime command
+    try:
+        result = subprocess.run(['uptime', '-p'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return {
+                "status": "ok",
+                "timestamp": datetime.now().isoformat(),
+                "system": {
+                    "uptime_human": result.stdout.strip(),
+                    "note": "Parsed from uptime command"
+                }
+            }
+    except Exception as e:
+        pass
+    
+    raise HTTPException(status_code=500, detail="Failed to get system uptime")
 
 
 @app.get("/api/files")
