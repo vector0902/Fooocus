@@ -428,7 +428,14 @@ def load_checkpoint(config_path=None, ckpt_path=None, output_vae=True, output_cl
     return (ldm_patched.modules.model_patcher.ModelPatcher(model, load_device=model_management.get_torch_device(), offload_device=offload_device), clip, vae)
 
 def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, output_clipvision=False, embedding_directory=None, output_model=True, vae_filename_param=None):
+    import time
+    _load_start = time.time()
+    print(f'[Model Loading] Starting to load: {ckpt_path}')
+    
+    _t0 = time.time()
     sd = ldm_patched.modules.utils.load_torch_file(ckpt_path)
+    print(f'[Model Loading] load_torch_file took {time.time() - _t0:.2f}s')
+    
     sd_keys = sd.keys()
     clip = None
     clipvision = None
@@ -438,7 +445,10 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
     model_patcher = None
     clip_target = None
 
+    _t0 = time.time()
     parameters = ldm_patched.modules.utils.calculate_parameters(sd, "model.diffusion_model.")
+    print(f'[Model Loading] calculate_parameters took {time.time() - _t0:.2f}s ({parameters} params)')
+    
     unet_dtype = model_management.unet_dtype(model_params=parameters)
     load_device = model_management.get_torch_device()
     manual_cast_dtype = model_management.unet_manual_cast(unet_dtype, load_device)
@@ -446,7 +456,10 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
     class WeightsLoader(torch.nn.Module):
         pass
 
+    _t0 = time.time()
     model_config = model_detection.model_config_from_unet(sd, "model.diffusion_model.", unet_dtype)
+    print(f'[Model Loading] model_config_from_unet took {time.time() - _t0:.2f}s')
+    
     model_config.set_manual_cast(manual_cast_dtype)
 
     if model_config is None:
@@ -457,12 +470,18 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
             clipvision = clip_vision.load_clipvision_from_sd(sd, model_config.clip_vision_prefix, True)
 
     if output_model:
+        _t0 = time.time()
         inital_load_device = model_management.unet_inital_load_device(parameters, unet_dtype)
         offload_device = model_management.unet_offload_device()
         model = model_config.get_model(sd, "model.diffusion_model.", device=inital_load_device)
+        print(f'[Model Loading] get_model took {time.time() - _t0:.2f}s')
+        
+        _t0 = time.time()
         model.load_model_weights(sd, "model.diffusion_model.")
+        print(f'[Model Loading] load_model_weights took {time.time() - _t0:.2f}s')
 
     if output_vae:
+        _t0 = time.time()
         if vae_filename_param is None:
             vae_sd = ldm_patched.modules.utils.state_dict_prefix_replace(sd, {"first_stage_model.": ""}, filter_keys=True)
             vae_sd = model_config.process_vae_state_dict(vae_sd)
@@ -470,8 +489,10 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
             vae_sd = ldm_patched.modules.utils.load_torch_file(vae_filename_param)
             vae_filename = vae_filename_param
         vae = VAE(sd=vae_sd)
+        print(f'[Model Loading] VAE loading took {time.time() - _t0:.2f}s')
 
     if output_clip:
+        _t0 = time.time()
         w = WeightsLoader()
         clip_target = model_config.clip_target()
         if clip_target is not None:
@@ -479,17 +500,21 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
             w.cond_stage_model = clip.cond_stage_model
             sd = model_config.process_clip_state_dict(sd)
             load_model_weights(w, sd)
+        print(f'[Model Loading] CLIP loading took {time.time() - _t0:.2f}s')
 
     left_over = sd.keys()
     if len(left_over) > 0:
         print("left over keys:", left_over)
 
     if output_model:
+        _t0 = time.time()
         model_patcher = ldm_patched.modules.model_patcher.ModelPatcher(model, load_device=load_device, offload_device=model_management.unet_offload_device(), current_device=inital_load_device)
         if inital_load_device != torch.device("cpu"):
             print("loaded straight to GPU")
             model_management.load_model_gpu(model_patcher)
+        print(f'[Model Loading] ModelPatcher + GPU load took {time.time() - _t0:.2f}s')
 
+    print(f'[Model Loading] Total load_checkpoint_guess_config took {time.time() - _load_start:.2f}s')
     return model_patcher, clip, vae, vae_filename, clipvision
 
 
