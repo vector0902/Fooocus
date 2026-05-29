@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 try:
-    from fastapi import FastAPI, HTTPException, BackgroundTasks
+    from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
     from fastapi.staticfiles import StaticFiles
@@ -135,9 +135,10 @@ async def root():
     }
 
 
-@app.get("/api/health")
-async def health_check():
+@app.api_route("/api/health", methods=["GET", "POST"])
+async def health_check(request: Request):
     """Health check endpoint (process alive, no model check)"""
+    print(f"[DEBUG] /api/health called with method: {request.method}", flush=True)
     return {"status": "alive", "message": "Process is running", "timestamp": datetime.now().isoformat()}
 
 
