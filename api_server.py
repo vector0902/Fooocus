@@ -124,6 +124,7 @@ async def root():
         "name": "Fooocus REST API",
         "version": "1.0.0",
         "status": "running",
+        "hostname": socket.gethostname(),
         "endpoints": {
             "health": "/api/health",
             "generate": "/api/generate",
@@ -139,7 +140,12 @@ async def root():
 async def health_check(request: Request):
     """Health check endpoint (process alive, no model check)"""
     print(f"[DEBUG] /api/health called with method: {request.method}", flush=True)
-    return {"status": "alive", "message": "Process is running", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "alive",
+        "message": "Process is running",
+        "hostname": socket.gethostname(),
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 @app.get("/api/ready")
