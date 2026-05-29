@@ -267,12 +267,14 @@ def refresh_everything(refiner_model_name, base_model_name, loras,
     return
 
 
-refresh_everything(
-    refiner_model_name=modules.config.default_refiner_model_name,
-    base_model_name=modules.config.default_base_model_name,
-    loras=get_enabled_loras(modules.config.default_loras),
-    vae_name=modules.config.default_vae,
-)
+# Lazy loading: DO NOT load model at startup
+# Model will be loaded on first request in async_worker.py
+# refresh_everything(
+#     refiner_model_name=modules.config.default_refiner_model_name,
+#     base_model_name=modules.config.default_base_model_name,
+#     loras=get_enabled_loras(modules.config.default_loras),
+#     vae_name=modules.config.default_vae,
+# )
 
 
 @torch.no_grad()

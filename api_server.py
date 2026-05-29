@@ -137,8 +137,37 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    """Health check endpoint (process alive, no model check)"""
+    return {"status": "alive", "message": "Process is running", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/api/ready")
+async def readiness_check():
+    """Readiness check endpoint (model loaded)"""
+    try:
+        import modules.default_pipeline as pipeline
+        
+        if pipeline.final_unet is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Model not loaded yet (lazy loading mode)"
+            )
+        
+        model_name = "unknown"
+        if hasattr(pipeline, 'model_base') and hasattr(pipeline.model_base, 'filename'):
+            model_name = pipeline.model_base.filename
+        
+        return {
+            "status": "ready",
+            "message": "Model loaded, ready to service",
+            "model": model_name,
+            "timestamp": datetime.now().isoformat()
+        }
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Pipeline module not initialized"
+        )
 
 
 @app.get("/api/models")
